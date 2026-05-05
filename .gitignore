@@ -2,7 +2,7 @@
 .venv/
 .cache/
 /byom-video
-media/
+/media/
 *.test
 .DS_Store
 examples/fixtures/*.mp4
