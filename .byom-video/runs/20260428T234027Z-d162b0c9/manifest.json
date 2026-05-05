@@ -1,0 +1,163 @@
+{
+  "run_id": "20260428T234027Z-d162b0c9",
+  "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov",
+  "created_at": "2026-04-28T23:40:27.882563Z",
+  "status": "completed",
+  "artifacts": [
+    {
+      "name": "manifest",
+      "path": "manifest.json",
+      "created_at": "2026-04-28T23:40:27.882942Z"
+    },
+    {
+      "name": "events",
+      "path": "events.jsonl",
+      "created_at": "2026-04-28T23:40:27.882943Z"
+    },
+    {
+      "name": "metadata",
+      "path": "metadata.json",
+      "created_at": "2026-04-28T23:40:27.942783Z"
+    },
+    {
+      "name": "transcript",
+      "path": "transcript.json",
+      "created_at": "2026-04-28T23:40:28.988645Z"
+    },
+    {
+      "name": "captions",
+      "path": "captions.srt",
+      "created_at": "2026-04-28T23:40:28.988933Z"
+    },
+    {
+      "name": "chunks",
+      "path": "chunks.json",
+      "created_at": "2026-04-28T23:40:28.989161Z"
+    },
+    {
+      "name": "highlights",
+      "path": "highlights.json",
+      "created_at": "2026-04-28T23:40:28.989318Z"
+    },
+    {
+      "name": "roughcut",
+      "path": "roughcut.json",
+      "created_at": "2026-04-28T23:40:28.989511Z"
+    },
+    {
+      "name": "ffmpeg_script",
+      "path": "ffmpeg_commands.sh",
+      "created_at": "2026-04-28T23:40:28.989622Z"
+    },
+    {
+      "name": "report",
+      "path": "report.html",
+      "created_at": "2026-04-28T23:40:28.989632Z"
+    },
+    {
+      "name": "export_validation",
+      "path": "export_validation.json",
+      "created_at": "2026-04-29T03:55:14.220648Z"
+    },
+    {
+      "name": "inference_mask",
+      "path": "inference_mask.json",
+      "created_at": "2026-05-02T04:09:18.458378Z"
+    },
+    {
+      "name": "mask_review",
+      "path": "mask_review.md",
+      "created_at": "2026-05-02T04:09:37.111553Z"
+    },
+    {
+      "name": "expansion_tasks",
+      "path": "expansion_tasks.json",
+      "created_at": "2026-05-02T04:09:37.115203Z"
+    },
+    {
+      "name": "verification",
+      "path": "verification.json",
+      "created_at": "2026-05-02T04:09:37.118523Z"
+    },
+    {
+      "name": "routes_plan",
+      "path": "routes_plan.json",
+      "created_at": "2026-05-02T04:43:18.828267Z"
+    },
+    {
+      "name": "model_requests_dryrun",
+      "path": "model_requests.dryrun.json",
+      "created_at": "2026-05-02T13:35:49.379394Z"
+    },
+    {
+      "name": "expansion_caption_variants",
+      "path": "expansions/caption_variants.json",
+      "created_at": "2026-05-02T13:35:49.382226Z"
+    },
+    {
+      "name": "expansion_timeline_labels",
+      "path": "expansions/timeline_labels.json",
+      "created_at": "2026-05-02T13:35:49.382384Z"
+    },
+    {
+      "name": "expansion_short_descriptions",
+      "path": "expansions/short_descriptions.json",
+      "created_at": "2026-05-02T13:35:49.382537Z"
+    },
+    {
+      "name": "verification_results",
+      "path": "verification_results.json",
+      "created_at": "2026-05-02T13:35:49.389042Z"
+    },
+    {
+      "name": "model_requests_review",
+      "path": "model_requests_review.md",
+      "created_at": "2026-05-02T13:57:58.302959Z"
+    },
+    {
+      "name": "clip_cards",
+      "path": "clip_cards.json",
+      "created_at": "2026-05-02T14:15:21.61025Z"
+    },
+    {
+      "name": "clip_cards_review",
+      "path": "clip_cards_review.md",
+      "created_at": "2026-05-02T14:15:21.621826Z"
+    },
+    {
+      "name": "enhanced_roughcut",
+      "path": "enhanced_roughcut.json",
+      "created_at": "2026-05-02T14:15:21.626398Z"
+    },
+    {
+      "name": "selected_clips",
+      "path": "selected_clips.json",
+      "created_at": "2026-05-02T14:25:43.977563Z"
+    },
+    {
+      "name": "export_manifest",
+      "path": "export_manifest.json",
+      "created_at": "2026-05-02T14:25:43.990431Z"
+    },
+    {
+      "name": "concat_list",
+      "path": "concat_list.txt",
+      "created_at": "2026-05-02T14:25:43.99495Z"
+    },
+    {
+      "name": "ffmpeg_concat",
+      "path": "ffmpeg_concat.sh",
+      "created_at": "2026-05-02T14:25:43.99506Z"
+    }
+  ],
+  "tool_versions": {
+    "ffprobe": "ffprobe version 8.1 Copyright (c) 2007-2026 the FFmpeg developers"
+  },
+  "exported_at": "2026-04-29T03:55:14.182823Z",
+  "export_status": "completed",
+  "exports_dir": "exports",
+  "exported_files": [
+    "exports/clip_0001.mp4"
+  ],
+  "export_validation_status": "completed"
+}

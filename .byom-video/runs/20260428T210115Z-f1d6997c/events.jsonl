@@ -1,0 +1,12 @@
+{"time":"2026-04-28T21:01:15.524447Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov","run_dir":".byom-video/runs/20260428T210115Z-f1d6997c"}}
+{"time":"2026-04-28T21:01:15.524686Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
+{"time":"2026-04-28T21:01:15.524691Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
+{"time":"2026-04-28T21:01:15.524694Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov"}}
+{"time":"2026-04-28T21:01:15.576261Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
+{"time":"2026-04-28T21:01:15.576282Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
+{"time":"2026-04-28T21:01:15.591885Z","type":"TRANSCRIBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov"}}
+{"time":"2026-04-28T21:01:16.548012Z","type":"TRANSCRIPT_VALIDATION_STARTED","details":{"path":"transcript.json"}}
+{"time":"2026-04-28T21:01:16.548135Z","type":"TRANSCRIPT_VALIDATION_COMPLETED","details":{"path":"transcript.json"}}
+{"time":"2026-04-28T21:01:16.548145Z","type":"TRANSCRIBE_COMPLETED","details":{"path":"transcript.json"}}
+{"time":"2026-04-28T21:01:16.548149Z","type":"ARTIFACT_WRITTEN","details":{"path":"transcript.json"}}
+{"time":"2026-04-28T21:01:16.548321Z","type":"RUN_COMPLETED","details":{"status":"completed"}}

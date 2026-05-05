@@ -1,0 +1,18 @@
+{
+  "run_id": "20260428T060751Z-bef2d823",
+  "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/intro.md",
+  "created_at": "2026-04-28T06:07:51.611057Z",
+  "status": "failed",
+  "artifacts": [
+    {
+      "name": "manifest",
+      "path": "manifest.json",
+      "created_at": "2026-04-28T06:07:51.611481Z"
+    },
+    {
+      "name": "events",
+      "path": "events.jsonl",
+      "created_at": "2026-04-28T06:07:51.611481Z"
+    }
+  ]
+}

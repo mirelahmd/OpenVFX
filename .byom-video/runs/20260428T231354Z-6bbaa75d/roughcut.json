@@ -1,0 +1,27 @@
+{
+  "schema_version": "roughcut.v1",
+  "source": {
+    "highlights_artifact": "highlights.json",
+    "mode": "deterministic",
+    "strategy": "top_highlights_v1"
+  },
+  "plan": {
+    "title": "Rough Cut Plan",
+    "intent": "Select strongest highlight candidates in timeline order.",
+    "total_duration_seconds": 4.48
+  },
+  "clips": [
+    {
+      "id": "clip_0001",
+      "highlight_id": "hl_0001",
+      "source_chunk_id": "chunk_0001",
+      "start": 0,
+      "end": 4.48,
+      "duration_seconds": 4.48,
+      "order": 1,
+      "score": 0.53,
+      "edit_intent": "Keep this segment as a candidate short clip.",
+      "text": "Okay, okay, okay."
+    }
+  ]
+}

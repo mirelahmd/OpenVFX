@@ -1,0 +1,5 @@
+{"time":"2026-04-28T06:07:51.611217Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/intro.md","run_dir":".byom-video/runs/20260428T060751Z-bef2d823"}}
+{"time":"2026-04-28T06:07:51.611593Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
+{"time":"2026-04-28T06:07:51.611598Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
+{"time":"2026-04-28T06:07:51.611601Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/intro.md"}}
+{"time":"2026-04-28T06:07:51.611692Z","type":"RUN_FAILED","details":{"error":"ffprobe is missing"}}

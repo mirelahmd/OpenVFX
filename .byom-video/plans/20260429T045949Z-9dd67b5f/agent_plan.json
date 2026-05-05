@@ -1,0 +1,32 @@
+{
+  "schema_version": "agent_plan.v1",
+  "plan_id": "20260429T045949Z-9dd67b5f",
+  "created_at": "2026-04-29T04:59:49.677827Z",
+  "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov",
+  "goal": "make 3 shorts",
+  "mode": "deterministic",
+  "preset": "shorts",
+  "status": "planned",
+  "actions": [
+    {
+      "id": "act_0001",
+      "type": "run_pipeline",
+      "status": "planned",
+      "description": "Run local shorts pipeline",
+      "options": {
+        "roughcut_max_clips": 3,
+        "with_captions": true,
+        "with_chunks": true,
+        "with_ffmpeg_script": true,
+        "with_highlights": true,
+        "with_report": true,
+        "with_roughcut": true,
+        "with_transcript": true
+      }
+    }
+  ],
+  "safety": {
+    "exports_require_explicit_execution": true,
+    "no_input_files_modified": true
+  }
+}

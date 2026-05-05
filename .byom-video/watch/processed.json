@@ -1,0 +1,38 @@
+{
+  "schema_version": "watch_processed.v1",
+  "updated_at": "2026-04-29T05:45:26.499943Z",
+  "items": [
+    {
+      "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample-20260428231506.mov",
+      "fingerprint": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample-20260428231506.mov:4495927:1577858400000000000",
+      "processed_at": "2026-04-29T04:15:06.910595Z",
+      "run_id": "20260429T041506Z-739ab678",
+      "status": "completed",
+      "error": ""
+    },
+    {
+      "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample1.mov",
+      "fingerprint": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample1.mov:4495927:1777436082240716935",
+      "processed_at": "2026-04-29T04:15:06.977368Z",
+      "run_id": "20260429T041506Z-dd7bd6e0",
+      "status": "completed",
+      "error": ""
+    },
+    {
+      "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/20260428231517/sample.mov",
+      "fingerprint": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/20260428231517/sample.mov:4495927:1577858400000000000",
+      "processed_at": "2026-04-29T04:15:17.069725Z",
+      "run_id": "20260429T041517Z-277ac378",
+      "status": "completed",
+      "error": ""
+    },
+    {
+      "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/20260429004526/sample.mov",
+      "fingerprint": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/20260429004526/sample.mov:4495927:1577858400000000000",
+      "processed_at": "2026-04-29T05:45:26.466644Z",
+      "run_id": "20260429T054526Z-364a9027",
+      "status": "completed",
+      "error": ""
+    }
+  ]
+}

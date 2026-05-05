@@ -1,0 +1,19 @@
+{
+  "schema_version": "transcript.v1",
+  "source": {
+    "input_path": "/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov",
+    "mode": "real",
+    "engine": "faster-whisper",
+    "model_size": "tiny"
+  },
+  "language": "en",
+  "duration_seconds": 5.0773125,
+  "segments": [
+    {
+      "id": "seg_0001",
+      "start": 0.0,
+      "end": 4.48,
+      "text": "Okay, okay, okay."
+    }
+  ]
+}

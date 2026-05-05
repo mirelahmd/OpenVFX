@@ -1,0 +1,4 @@
+{"time":"2026-05-02T03:21:23.030768Z","type":"PLAN_CREATED","details":{"goal":"make 5 shorts","plan_id":"20260502T032123Z-91f01e37"}}
+{"time":"2026-05-02T03:21:23.040087Z","type":"PLAN_REVISED","details":{"request":"make captions only","snapshot_id":"snapshot_0001"}}
+{"time":"2026-05-02T03:21:23.043103Z","type":"PLAN_REVIEW_ARTIFACT_WRITTEN","details":{"path":".byom-video/plans/20260502T032123Z-91f01e37/review.md"}}
+{"time":"2026-05-02T03:21:23.04667Z","type":"PLAN_DIFF_ARTIFACT_WRITTEN","details":{"path":".byom-video/plans/20260502T032123Z-91f01e37/diffs/diff_current_vs_snapshot_0001.md","snapshot_id":"snapshot_0001"}}

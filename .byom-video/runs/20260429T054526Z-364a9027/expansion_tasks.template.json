@@ -1,0 +1,20 @@
+{
+  "schema_version": "expansion_tasks.v1",
+  "source": {
+    "inference_mask_artifact": "inference_mask.json"
+  },
+  "tasks": [
+    {
+      "id": "task_0001",
+      "input_refs": [
+        "decision_0001"
+      ],
+      "model_route": "caption_expansion",
+      "output_contract": {
+        "max_items": 3,
+        "max_words": 18
+      },
+      "type": "caption_variants"
+    }
+  ]
+}

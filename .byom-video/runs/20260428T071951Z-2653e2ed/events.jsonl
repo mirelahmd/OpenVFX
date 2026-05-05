@@ -1,0 +1,9 @@
+{"time":"2026-04-28T07:19:51.796802Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/examples/fixtures/tiny.mp4","run_dir":".byom-video/runs/20260428T071951Z-2653e2ed"}}
+{"time":"2026-04-28T07:19:51.797121Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
+{"time":"2026-04-28T07:19:51.797127Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
+{"time":"2026-04-28T07:19:51.79713Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/examples/fixtures/tiny.mp4"}}
+{"time":"2026-04-28T07:19:51.814178Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
+{"time":"2026-04-28T07:19:51.814194Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
+{"time":"2026-04-28T07:19:51.828067Z","type":"TRANSCRIBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/examples/fixtures/tiny.mp4"}}
+{"time":"2026-04-28T07:19:51.861441Z","type":"TRANSCRIBE_FAILED","details":{"error":"transcribe worker failed: error: faster-whisper is not installed. Install transcription dependencies with `python3 -m pip install -e \"workers[transcribe]\"`."}}
+{"time":"2026-04-28T07:19:51.861453Z","type":"RUN_FAILED","details":{"error":"transcribe worker failed: error: faster-whisper is not installed. Install transcription dependencies with `python3 -m pip install -e \"workers[transcribe]\"`."}}

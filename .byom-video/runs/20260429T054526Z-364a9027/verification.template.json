@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {
+      "id": "check_0001",
+      "message": "",
+      "status": "pending",
+      "type": "must_not_include"
+    }
+  ],
+  "schema_version": "verification.v1",
+  "source": {
+    "expansion_artifacts": [],
+    "inference_mask_artifact": "inference_mask.json"
+  },
+  "status": "pending"
+}

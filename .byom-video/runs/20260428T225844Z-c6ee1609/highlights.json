@@ -1,0 +1,32 @@
+{
+  "schema_version": "highlights.v1",
+  "source": {
+    "chunks_artifact": "chunks.json",
+    "mode": "deterministic",
+    "strategy": "heuristic_v1"
+  },
+  "scoring": {
+    "min_duration_seconds": 3,
+    "max_duration_seconds": 90,
+    "top_k": 10
+  },
+  "highlights": [
+    {
+      "id": "hl_0001",
+      "chunk_id": "chunk_0001",
+      "start": 0,
+      "end": 4.48,
+      "duration_seconds": 4.48,
+      "score": 0.53,
+      "label": "Candidate highlight",
+      "reason": "Candidate selected because it has sufficient word count.",
+      "text": "Okay, okay, okay.",
+      "signals": {
+        "word_count": 3,
+        "has_question": false,
+        "has_hook_phrase": false,
+        "has_emphasis_marker": false
+      }
+    }
+  ]
+}
