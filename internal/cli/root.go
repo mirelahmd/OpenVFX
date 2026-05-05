@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"byom-video/internal/commands"
-	"byom-video/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/commands"
+	"github.com/mirelahmd/OpenVFX/internal/config"
 )
 
 const usage = `byom-video is a local-first media/video workflow control plane.

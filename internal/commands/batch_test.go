@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/batch"
+	"github.com/mirelahmd/OpenVFX/internal/batch"
 )
 
 func TestBatchRejectsExportForMetadataPreset(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 // ── mask-decisions ──────────────────────────────────────────────────────────────

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/manifest"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type Options struct {

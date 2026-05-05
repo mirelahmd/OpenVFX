@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/batch"
-	"byom-video/internal/cleanup"
-	"byom-video/internal/manifest"
-	"byom-video/internal/runctx"
-	"byom-video/internal/runstore"
-	"byom-video/internal/watch"
+	"github.com/mirelahmd/OpenVFX/internal/batch"
+	"github.com/mirelahmd/OpenVFX/internal/cleanup"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/runctx"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/watch"
 )
 
 type RetryBatchOptions struct {

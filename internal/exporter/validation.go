@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"byom-video/internal/media"
+	"github.com/mirelahmd/OpenVFX/internal/media"
 )
 
 const ExportValidationArtifactPath = "export_validation.json"

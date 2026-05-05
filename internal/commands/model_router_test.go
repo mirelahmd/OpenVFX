@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/manifest"
-	"byom-video/internal/modelrouter"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/modelrouter"
 )
 
 const testConfigWithEnabledStubRoutes = `models:

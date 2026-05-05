@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"strings"
 
-	"byom-video/internal/config"
-	"byom-video/internal/media"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/media"
 )
 
 func Doctor(stdout io.Writer) error {

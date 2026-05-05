@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/editorartifacts"
-	"byom-video/internal/events"
-	"byom-video/internal/manifest"
-	"byom-video/internal/report"
-	"byom-video/internal/roughcut"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/report"
+	"github.com/mirelahmd/OpenVFX/internal/roughcut"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type ClipCardsOptions struct {

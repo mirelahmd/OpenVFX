@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"byom-video/internal/config"
-	"byom-video/internal/modelrouter"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/modelrouter"
 )
 
 type ConfigShowOptions struct{ JSON bool }

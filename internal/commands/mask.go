@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/config"
-	"byom-video/internal/events"
-	"byom-video/internal/highlights"
-	"byom-video/internal/manifest"
-	"byom-video/internal/roughcut"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/highlights"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/roughcut"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type MaskPlanOptions struct {

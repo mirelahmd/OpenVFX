@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"byom-video/internal/agent"
+	"github.com/mirelahmd/OpenVFX/internal/agent"
 )
 
 func TestReviseMakeShorterAndNClips(t *testing.T) {

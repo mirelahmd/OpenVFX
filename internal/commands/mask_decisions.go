@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/config"
-	"byom-video/internal/events"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 // ── Decision-level mask editing ────────────────────────────────────────────────

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"byom-video/internal/events"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type ReviseMaskOptions struct {

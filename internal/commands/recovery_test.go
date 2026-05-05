@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/batch"
-	"byom-video/internal/manifest"
-	"byom-video/internal/watch"
+	"github.com/mirelahmd/OpenVFX/internal/batch"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/watch"
 )
 
 func TestRetryBatchDryRunFindsFailedItems(t *testing.T) {

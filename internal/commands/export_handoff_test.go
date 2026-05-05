@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/exportartifacts"
-	"byom-video/internal/exporter"
-	"byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/exporter"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 func TestSelectedClipsFromEnhancedRoughcut(t *testing.T) {

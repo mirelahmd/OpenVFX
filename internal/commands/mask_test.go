@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/highlights"
-	"byom-video/internal/manifest"
-	"byom-video/internal/roughcut"
+	"github.com/mirelahmd/OpenVFX/internal/highlights"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/roughcut"
 )
 
 func TestMaskPlanFromRoughcutCreatesDecisionsAndManifest(t *testing.T) {

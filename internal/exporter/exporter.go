@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"byom-video/internal/events"
-	"byom-video/internal/manifest"
-	"byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type Summary struct {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 func TestFindCandidates(t *testing.T) {

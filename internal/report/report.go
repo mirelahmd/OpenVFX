@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"byom-video/internal/editorartifacts"
-	"byom-video/internal/exportartifacts"
-	"byom-video/internal/exporter"
-	"byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/exporter"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 type Summary struct {

@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"byom-video/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/config"
 )
 
 func Init(stdout io.Writer, force bool) error {

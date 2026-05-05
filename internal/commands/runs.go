@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"byom-video/internal/runinfo"
+	"github.com/mirelahmd/OpenVFX/internal/runinfo"
 )
 
 type RunsOptions struct {
