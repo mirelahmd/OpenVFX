@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -26,9 +27,15 @@ func Doctor(stdout io.Writer) error {
 
 	if config.Exists(config.DefaultPath) {
 		fmt.Fprintf(stdout, "OK      config: %s\n", config.DefaultPath)
-		if cfg, err := config.Load(config.DefaultPath); err == nil && cfg.Python.Interpreter != "" {
-			path, err := exec.LookPath(cfg.Python.Interpreter)
-			printConfiguredPythonStatus(stdout, cfg.Python.Interpreter, path, err)
+		interpreter := os.Getenv("BYOM_VIDEO_PYTHON")
+		if interpreter == "" {
+			if cfg, err := config.Load(config.DefaultPath); err == nil {
+				interpreter = cfg.Python.Interpreter
+			}
+		}
+		if interpreter != "" {
+			path, err := exec.LookPath(interpreter)
+			printConfiguredPythonStatus(stdout, interpreter, path, err)
 		}
 	} else {
 		fmt.Fprintf(stdout, "MISSING config: %s not found; run `byom-video init` to create one\n", config.DefaultPath)
