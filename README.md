@@ -14,8 +14,16 @@ Local-first video workflow CLI. Transcribe, cut, caption, and plan exports from 
 ## Install
 
 ```sh
-git clone https://github.com/your-org/byom-video
-cd byom-video
+curl -fsSL https://raw.githubusercontent.com/mirelahmd/OpenVFX/main/install.sh | sh
+```
+
+This installs the `byom-video` binary and sets up a Python environment with `faster-whisper` for transcription. Requires Go 1.22+ and Python 3.10+.
+
+**Or build from source:**
+
+```sh
+git clone https://github.com/mirelahmd/OpenVFX.git
+cd OpenVFX
 go build -o byom-video ./cmd/byom-video
 ./byom-video version
 ```
