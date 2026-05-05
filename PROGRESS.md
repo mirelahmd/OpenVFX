@@ -4588,3 +4588,46 @@ Errors or assumptions:
 - Assumed example cloud-provider config files should remain documented as illustrative future shapes, not supported execution paths.
 - Assumed release smoke should favor clean skips over hard failures for optional local dependencies such as `faster_whisper` and Ollama.
 <!-- HANDOFF 035 END -->
+
+
+## Test Phase 1 — External User Install + Pipeline Smoke
+
+<!-- TEST PHASE 1 START -->
+Date: 2026-05-05
+
+Goal: Verify the full external user install and basic pipeline flow from a clean machine perspective.
+
+### Install Issues Found and Fixed
+
+| Issue | Fix |
+|---|---|
+| `.byom-video/` local run data committed to git | `git rm -r --cached .byom-video/` |
+| `internal/media/` package not committed (ignored by overbroad `media/` gitignore rule) | Changed `media/` to `/media/` in `.gitignore`, committed `internal/media/ffprobe.go` |
+| GitHub CDN cached old module zip for reused tag names | Used new tag names (`v0.1.1`, `v0.1.2`, `v0.1.3`) each time |
+| `byom_video_workers` Python package not installed by `install.sh` | Added `git clone + pip install workers/` step to `install.sh` |
+| `byom-video doctor` showed MISSING configured python even when `BYOM_VIDEO_PYTHON` was set | Fixed `doctor.go` to check env var before falling back to config file |
+
+### Commands Tested
+
+| Command | Result |
+|---|---|
+| `curl -fsSL .../install.sh \| sh` | Passed after above fixes |
+| `byom-video version` | Passed — printed v0.1.0-alpha |
+| `byom-video doctor` | All OK after env var fix |
+| `byom-video init` | Created byom-video.yaml |
+| `byom-video pipeline Untitledvi.mov --preset shorts` | Passed — transcribed, highlighted, roughcut, FFmpeg script, report |
+| `byom-video plan --goal "make a short clip under 60 seconds"` | Plan created |
+| `byom-video review-plan <plan_id>` | Showed planned actions |
+| `byom-video approve-plan <plan_id>` | Approved |
+| `byom-video execute-plan <plan_id>` | Executed, produced new run |
+
+### Known Limitations Surfaced
+
+- `go install` requires `GOPROXY=direct GONOSUMDB='*'` due to uppercase letters in module path (`OpenVFX`) causing sum database friction. Long-term fix: rename module to lowercase.
+- The "agentic" planning layer is deterministic only — the `--goal` text is stored but does not influence highlight selection or roughcut decisions. Real LLM integration is needed for goal-driven editing.
+- `execute-plan` re-runs the pipeline rather than acting on prior run artifacts, producing a duplicate run.
+
+### Next Recommended Step
+
+Wire an LLM (local Ollama) into the highlight selection and roughcut decisions so the `--goal` text actually influences what gets cut.
+<!-- TEST PHASE 1 END -->

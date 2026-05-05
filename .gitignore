@@ -8,3 +8,4 @@
 examples/fixtures/*.mp4
 workers/*.egg-info/
 workers/**/__pycache__/
+workers/build/
