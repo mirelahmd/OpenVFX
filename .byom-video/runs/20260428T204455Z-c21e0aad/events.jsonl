@@ -1,9 +1,0 @@
-{"time":"2026-04-28T20:44:55.572877Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov","run_dir":".byom-video/runs/20260428T204455Z-c21e0aad"}}
-{"time":"2026-04-28T20:44:55.5731Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
-{"time":"2026-04-28T20:44:55.573105Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
-{"time":"2026-04-28T20:44:55.573109Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov"}}
-{"time":"2026-04-28T20:44:55.596168Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
-{"time":"2026-04-28T20:44:55.596194Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
-{"time":"2026-04-28T20:44:55.612325Z","type":"TRANSCRIBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/Untitled.mov"}}
-{"time":"2026-04-28T20:44:56.03141Z","type":"TRANSCRIBE_FAILED","details":{"error":"transcribe worker failed: error: Got: ConnectError: [Errno 8] nodename nor servname provided, or not known\nAn error happened while trying to locate the files on the Hub and we cannot find the appropriate snapshot folder for the specified revision on the local disk. Please check your internet connection and try again."}}
-{"time":"2026-04-28T20:44:56.031424Z","type":"RUN_FAILED","details":{"error":"transcribe worker failed: error: Got: ConnectError: [Errno 8] nodename nor servname provided, or not known\nAn error happened while trying to locate the files on the Hub and we cannot find the appropriate snapshot folder for the specified revision on the local disk. Please check your internet connection and try again."}}

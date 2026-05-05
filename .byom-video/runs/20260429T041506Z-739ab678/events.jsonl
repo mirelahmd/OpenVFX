@@ -1,7 +1,0 @@
-{"time":"2026-04-29T04:15:06.910802Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample-20260428231506.mov","run_dir":".byom-video/runs/20260429T041506Z-739ab678"}}
-{"time":"2026-04-29T04:15:06.910969Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
-{"time":"2026-04-29T04:15:06.910975Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
-{"time":"2026-04-29T04:15:06.910979Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/watch-smoke/sample-20260428231506.mov"}}
-{"time":"2026-04-29T04:15:06.964563Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
-{"time":"2026-04-29T04:15:06.964581Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
-{"time":"2026-04-29T04:15:06.977153Z","type":"RUN_COMPLETED","details":{"status":"completed"}}

@@ -1,7 +1,0 @@
-{"time":"2026-04-29T05:45:26.400605Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/batch-smoke/sample2.mov","run_dir":".byom-video/runs/20260429T054526Z-706420cb"}}
-{"time":"2026-04-29T05:45:26.400682Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
-{"time":"2026-04-29T05:45:26.400687Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
-{"time":"2026-04-29T05:45:26.40069Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/media/batch-smoke/sample2.mov"}}
-{"time":"2026-04-29T05:45:26.422544Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
-{"time":"2026-04-29T05:45:26.422562Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
-{"time":"2026-04-29T05:45:26.435579Z","type":"RUN_COMPLETED","details":{"status":"completed"}}

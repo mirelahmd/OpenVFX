@@ -1,7 +1,0 @@
-{"time":"2026-04-28T06:38:46.203092Z","type":"RUN_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/examples/fixtures/tiny.mp4","run_dir":".byom-video/runs/20260428T063846Z-a178a6cf"}}
-{"time":"2026-04-28T06:38:46.203412Z","type":"ARTIFACT_WRITTEN","details":{"path":"manifest.json"}}
-{"time":"2026-04-28T06:38:46.203416Z","type":"ARTIFACT_WRITTEN","details":{"path":"events.jsonl"}}
-{"time":"2026-04-28T06:38:46.203419Z","type":"FFPROBE_STARTED","details":{"input_path":"/Users/mireliftikharahmed/Documents/BYOMVIDEO/examples/fixtures/tiny.mp4"}}
-{"time":"2026-04-28T06:38:46.221563Z","type":"FFPROBE_COMPLETED","details":{"path":"metadata.json"}}
-{"time":"2026-04-28T06:38:46.221584Z","type":"ARTIFACT_WRITTEN","details":{"path":"metadata.json"}}
-{"time":"2026-04-28T06:38:46.238074Z","type":"RUN_COMPLETED","details":{"status":"completed"}}
