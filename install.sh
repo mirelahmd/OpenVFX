@@ -47,6 +47,13 @@ else
   "$VENV_DIR/bin/pip" install --quiet --upgrade pip
   "$VENV_DIR/bin/pip" install --quiet faster-whisper
 
+  # Install byom_video_workers from repo
+  TMP_REPO="$(mktemp -d)"
+  echo "Fetching worker package..."
+  git clone --quiet --depth 1 https://github.com/mirelahmd/OpenVFX.git "$TMP_REPO"
+  "$VENV_DIR/bin/pip" install --quiet "$TMP_REPO/workers"
+  rm -rf "$TMP_REPO"
+
   # Write BYOM_VIDEO_PYTHON into shell config
   if [ -n "$SHELL_RC" ]; then
     echo "export BYOM_VIDEO_PYTHON=\"$VENV_DIR/bin/python\"" >> "$SHELL_RC"
