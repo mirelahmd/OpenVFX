@@ -1,0 +1,10 @@
+.byom-video/
+.venv/
+.cache/
+byom-video
+media/
+*.test
+.DS_Store
+examples/fixtures/*.mp4
+workers/*.egg-info/
+workers/**/__pycache__/

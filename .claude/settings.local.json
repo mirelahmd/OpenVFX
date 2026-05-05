@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/scripts/smoke-routes-mask-revision.sh)",
+      "Bash(gofmt -w internal/commands/mask_routes.go internal/commands/mask_revision.go internal/commands/mask_revision_test.go internal/cli/root.go)",
+      "Bash(GOCACHE=/Users/mireliftikharahmed/Documents/BYOMVIDEO/.cache/go-build go build ./cmd/byom-video)",
+      "Bash(GOCACHE=/Users/mireliftikharahmed/Documents/BYOMVIDEO/.cache/go-build go test ./...)",
+      "Bash(python3 -m compileall -q workers/byom_video_workers)",
+      "Bash(scripts/smoke-routes-mask-revision.sh)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/scripts/smoke-mask-decision-route-preview.sh)",
+      "Bash(gofmt -l ./internal/commands/mask_decisions.go ./internal/commands/mask_revision.go ./internal/commands/mask_routes.go ./internal/cli/root.go)",
+      "Bash(gofmt -w /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/expansion_stub.go)",
+      "Bash(gofmt -l /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/expansion_stub.go)",
+      "Bash(gofmt -w /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/verify_expansions.go)",
+      "Bash(gofmt -l /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/verify_expansions.go)",
+      "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/scripts/smoke-verify-expansions.sh)",
+      "Bash(./byom-video help *)"
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+project:
+  name: byom-video-groq-local
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: false
+  entries:
+    groq_reasoner:
+      provider: groq
+      model: placeholder-groq-model
+      role: reasoner
+      api_key_env: GROQ_API_KEY
+      options:
+        temperature: 0.1
+    local_expander:
+      provider: qwen-local
+      model: qwen2.5:7b
+      role: expander
+      options:
+        temperature: 0.2
+  routes:
+    highlight_reasoning: groq_reasoner
+    caption_expansion: local_expander
+    verification: groq_reasoner

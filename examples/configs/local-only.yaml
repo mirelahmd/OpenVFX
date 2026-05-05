@@ -1,0 +1,20 @@
+project:
+  name: byom-video-local-only
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: true
+  entries:
+    local_qwen:
+      provider: ollama
+      model: qwen2.5:7b
+      role: general
+      base_url: http://localhost:11434
+      options:
+        temperature: 0.2
+  routes:
+    caption_expansion: local_qwen
+    timeline_labeling: local_qwen
+    description_expansion: local_qwen

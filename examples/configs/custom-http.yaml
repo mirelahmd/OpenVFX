@@ -1,0 +1,30 @@
+project:
+  name: byom-video-custom-http
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: false
+  entries:
+    private_reasoner:
+      provider: custom-http
+      model: internal-reasoner-v1
+      role: reasoner
+      base_url: http://localhost:8080/v1
+      api_key_env: CUSTOM_HTTP_API_KEY
+      options:
+        temperature: 0.1
+    private_expander:
+      provider: custom-http
+      model: internal-expander-v1
+      role: expander
+      base_url: http://localhost:8080/v1
+      api_key_env: CUSTOM_HTTP_API_KEY
+      options:
+        temperature: 0.4
+  routes:
+    highlight_reasoning: private_reasoner
+    caption_expansion: private_expander
+    timeline_labeling: private_expander
+    verification: private_reasoner

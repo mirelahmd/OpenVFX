@@ -1,0 +1,28 @@
+project:
+  name: byom-video-openai-ollama
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: false
+  entries:
+    premium_reasoner:
+      provider: openai
+      model: gpt-4.1
+      role: reasoner
+      api_key_env: OPENAI_API_KEY
+      options:
+        temperature: 0.1
+        max_tokens: 1200
+    local_qwen:
+      provider: ollama
+      model: qwen2.5:7b
+      role: expander
+      base_url: http://localhost:11434
+      options:
+        temperature: 0.2
+  routes:
+    highlight_reasoning: premium_reasoner
+    caption_expansion: local_qwen
+    verification: premium_reasoner

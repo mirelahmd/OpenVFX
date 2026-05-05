@@ -1,0 +1,12 @@
+[project]
+name = "byom-video-workers"
+version = "0.1.0"
+description = "Stub Python workers for BYOM Video local media workflows"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+transcribe = ["faster-whisper"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

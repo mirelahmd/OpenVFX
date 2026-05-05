@@ -1,0 +1,26 @@
+project:
+  name: byom-video-nvidia-expander
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: false
+  entries:
+    premium_reasoner:
+      provider: openai
+      model: gpt-4.1
+      role: reasoner
+      api_key_env: OPENAI_API_KEY
+    nvidia_expander:
+      provider: nvidia
+      model: placeholder-nvidia-model
+      role: expander
+      api_key_env: NVIDIA_API_KEY
+      options:
+        temperature: 0.3
+  routes:
+    highlight_reasoning: premium_reasoner
+    caption_expansion: nvidia_expander
+    timeline_labeling: nvidia_expander
+    verification: premium_reasoner
