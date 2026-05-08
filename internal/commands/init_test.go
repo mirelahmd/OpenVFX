@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/byom-video/internal/config"
 )
 
 func TestInitCreatesConfigAndFolders(t *testing.T) {

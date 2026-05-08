@@ -9,18 +9,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/events"
-	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/exporter"
-	"github.com/mirelahmd/OpenVFX/internal/exportscript"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
-	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/byom-video/internal/editorartifacts"
+	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/byom-video/internal/exportartifacts"
+	"github.com/mirelahmd/byom-video/internal/exporter"
+	"github.com/mirelahmd/byom-video/internal/exportscript"
+	"github.com/mirelahmd/byom-video/internal/goalartifacts"
+	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/runstore"
 )
 
 type SelectedClipsOptions struct {
-	Overwrite bool
-	JSON      bool
+	Overwrite          bool
+	JSON               bool
+	PreferGoalRoughcut bool
 }
 
 type ExportManifestOptions struct {
@@ -35,6 +37,11 @@ type FFmpegScriptCommandOptions struct {
 }
 
 type ConcatPlanOptions struct {
+	Overwrite bool
+	JSON      bool
+}
+
+type GoalHandoffOptions struct {
 	Overwrite bool
 	JSON      bool
 }
@@ -63,7 +70,7 @@ func SelectedClipsCommand(runID string, stdout io.Writer, opts SelectedClipsOpti
 			return fmt.Errorf("selected_clips.json already exists; pass --overwrite")
 		}
 	}
-	doc, err := buildSelectedClips(runDir, runID)
+	doc, err := buildSelectedClips(runDir, runID, opts)
 	if err != nil {
 		writeMaskFailure(log, "SELECTED_CLIPS_FAILED", err.Error())
 		return err
@@ -274,7 +281,7 @@ func ConcatPlanCommand(runID string, stdout io.Writer, opts ConcatPlanOptions) e
 	return nil
 }
 
-func buildSelectedClips(runDir string, runID string) (exportartifacts.SelectedClips, error) {
+func buildSelectedClips(runDir string, runID string, opts SelectedClipsOptions) (exportartifacts.SelectedClips, error) {
 	m, err := manifest.Read(filepath.Join(runDir, "manifest.json"))
 	if err != nil {
 		return exportartifacts.SelectedClips{}, fmt.Errorf("read manifest: %w", err)
@@ -284,6 +291,28 @@ func buildSelectedClips(runDir string, runID string) (exportartifacts.SelectedCl
 		CreatedAt:     time.Now().UTC(),
 		RunID:         runID,
 		InputPath:     m.InputPath,
+	}
+	if opts.PreferGoalRoughcut {
+		goalDoc, err := goalartifacts.ReadGoalRoughcut(filepath.Join(runDir, "goal_roughcut.json"))
+		if err != nil {
+			return exportartifacts.SelectedClips{}, fmt.Errorf("read goal roughcut: %w", err)
+		}
+		doc.Source.GoalRoughcutArtifact = "goal_roughcut.json"
+		doc.Source.RoughcutArtifact = "roughcut.json"
+		for _, clip := range goalDoc.Clips {
+			doc.Clips = append(doc.Clips, exportartifacts.SelectedClip{
+				ID:              clip.ID,
+				Order:           clip.Order,
+				Start:           clip.Start,
+				End:             clip.End,
+				DurationSeconds: positiveDuration(clip.DurationSeconds, clip.Start, clip.End),
+				Title:           fallbackClipTitle(clip.Text),
+				Description:     fallbackClipDescription(clip.Text, clip.Reason),
+				SourceText:      clip.Text,
+				OutputFilename:  clip.ID + ".mp4",
+			})
+		}
+		return doc, nil
 	}
 	if _, err := os.Stat(filepath.Join(runDir, "enhanced_roughcut.json")); err == nil {
 		enhanced, err := editorartifacts.ReadEnhancedRoughcut(filepath.Join(runDir, "enhanced_roughcut.json"))
@@ -362,7 +391,7 @@ func buildExportManifest(runDir string, runID string) (exportartifacts.ExportMan
 	}
 	selectedPath := filepath.Join(runDir, "selected_clips.json")
 	if _, err := os.Stat(selectedPath); err != nil {
-		selected, buildErr := buildSelectedClips(runDir, runID)
+		selected, buildErr := buildSelectedClips(runDir, runID, SelectedClipsOptions{})
 		if buildErr != nil {
 			return exportartifacts.ExportManifest{}, buildErr
 		}
@@ -425,6 +454,51 @@ func buildExportManifest(runDir string, runID string) (exportartifacts.ExportMan
 	}
 	doc.Summary.Planned = len(doc.Clips)
 	return doc, nil
+}
+
+func GoalHandoffCommand(runID string, stdout io.Writer, opts GoalHandoffOptions) error {
+	if err := ClipCardsCommand(runID, io.Discard, ClipCardsOptions{
+		Overwrite:          opts.Overwrite,
+		PreferGoalRoughcut: true,
+	}); err != nil {
+		return err
+	}
+	if err := SelectedClipsCommand(runID, io.Discard, SelectedClipsOptions{
+		Overwrite:          opts.Overwrite,
+		PreferGoalRoughcut: true,
+	}); err != nil {
+		return err
+	}
+	if err := FFmpegScriptCommand(runID, io.Discard, FFmpegScriptCommandOptions{
+		Mode:      "stream-copy",
+		Overwrite: true,
+	}); err != nil {
+		return err
+	}
+	if err := ExportManifestCommand(runID, io.Discard, ExportManifestOptions{Overwrite: true}); err != nil {
+		return err
+	}
+	summary := map[string]any{
+		"run_id":               runID,
+		"clip_cards":           "clip_cards.json",
+		"selected_clips":       "selected_clips.json",
+		"ffmpeg_script":        "ffmpeg_commands.sh",
+		"export_manifest":      "export_manifest.json",
+		"prefer_goal_roughcut": true,
+	}
+	if opts.JSON {
+		data, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Fprintln(stdout, string(data))
+		return nil
+	}
+	fmt.Fprintln(stdout, "Goal handoff created")
+	fmt.Fprintf(stdout, "  run id:          %s\n", runID)
+	fmt.Fprintln(stdout, "  source:          goal_roughcut.json")
+	fmt.Fprintf(stdout, "  clip cards:      %s\n", filepath.Join(runstore.RunsRoot, runID, "clip_cards.json"))
+	fmt.Fprintf(stdout, "  selected clips:  %s\n", filepath.Join(runstore.RunsRoot, runID, "selected_clips.json"))
+	fmt.Fprintf(stdout, "  ffmpeg script:   %s\n", filepath.Join(runstore.RunsRoot, runID, "ffmpeg_commands.sh"))
+	fmt.Fprintf(stdout, "  export manifest: %s\n", filepath.Join(runstore.RunsRoot, runID, "export_manifest.json"))
+	return nil
 }
 
 func positiveDuration(duration float64, start float64, end float64) float64 {

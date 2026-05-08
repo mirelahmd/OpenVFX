@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/agent"
+	"github.com/mirelahmd/byom-video/internal/agent"
 )
 
 type ReviewPlanOptions struct {
@@ -34,6 +34,9 @@ type PlanReview struct {
 	InputPath          string         `json:"input_path"`
 	TargetType         string         `json:"target_type"`
 	Preset             string         `json:"preset"`
+	GoalAware          bool           `json:"goal_aware"`
+	GoalUseOllama      bool           `json:"goal_use_ollama"`
+	FallbackAllowed    bool           `json:"goal_fallback_deterministic"`
 	Safety             agent.Safety   `json:"safety"`
 	ValidationStatus   string         `json:"validation_status"`
 	ValidationErrors   []string       `json:"validation_errors,omitempty"`
@@ -238,6 +241,12 @@ func BuildPlanReview(plan agent.Plan) PlanReview {
 			review.ExportsIncluded = true
 		case "validate_run":
 			review.ValidationIncluded = true
+		case "goal_rerank":
+			review.GoalAware = true
+			review.GoalUseOllama = boolActionOption(action.Options, "goal_use_ollama")
+			review.FallbackAllowed = boolActionOption(action.Options, "goal_fallback_deterministic")
+		case "goal_roughcut":
+			review.GoalAware = true
 		case "watch_pipeline":
 			if boolActionOption(action.Options, "once") {
 				review.WatchMode = "once"
@@ -295,6 +304,11 @@ func printReview(stdout io.Writer, review PlanReview) {
 	fmt.Fprintf(stdout, "  preset:        %s\n", review.Preset)
 	fmt.Fprintf(stdout, "  approval:      %s\n", review.ApprovalStatus)
 	fmt.Fprintf(stdout, "  validation:    %s\n", review.ValidationStatus)
+	fmt.Fprintf(stdout, "  goal aware:    %t\n", review.GoalAware)
+	if review.GoalAware {
+		fmt.Fprintf(stdout, "  goal ollama:   %t\n", review.GoalUseOllama)
+		fmt.Fprintf(stdout, "  goal fallback: %t\n", review.FallbackAllowed)
+	}
 	fmt.Fprintf(stdout, "  export:        %t\n", review.ExportsIncluded)
 	fmt.Fprintf(stdout, "  validate:      %t\n", review.ValidationIncluded)
 	if review.WatchMode != "" {

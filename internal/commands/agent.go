@@ -11,24 +11,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/agent"
-	"github.com/mirelahmd/OpenVFX/internal/batch"
+	"github.com/mirelahmd/byom-video/internal/agent"
+	"github.com/mirelahmd/byom-video/internal/batch"
 )
 
 type PlanOptions struct {
-	Goal          string
-	Preset        string
-	MaxClips      int
-	WithExport    bool
-	WithValidate  bool
-	WithReport    bool
-	WithReportSet bool
-	Execute       bool
-	DryRun        bool
-	Mode          string
-	Recursive     bool
-	Once          bool
-	Limit         int
+	Goal                      string
+	Preset                    string
+	MaxClips                  int
+	WithExport                bool
+	WithValidate              bool
+	WithReport                bool
+	WithReportSet             bool
+	GoalAware                 bool
+	GoalUseOllama             bool
+	GoalFallbackDeterministic bool
+	Execute                   bool
+	DryRun                    bool
+	Mode                      string
+	Recursive                 bool
+	Once                      bool
+	Limit                     int
 }
 
 type InspectPlanOptions struct{ JSON bool }
@@ -36,26 +39,32 @@ type InspectPlanOptions struct{ JSON bool }
 type PlanArtifactsOptions struct{ JSON bool }
 
 type PlanArtifactsSummary struct {
-	PlanID    string   `json:"plan_id"`
-	Plan      string   `json:"agent_plan"`
-	ActionLog string   `json:"actions_log"`
-	Review    string   `json:"review,omitempty"`
-	Snapshots []string `json:"snapshots"`
-	Diffs     []string `json:"diffs"`
+	PlanID      string   `json:"plan_id"`
+	Plan        string   `json:"agent_plan"`
+	ActionLog   string   `json:"actions_log"`
+	Review      string   `json:"review,omitempty"`
+	AgentResult string   `json:"agent_result,omitempty"`
+	RunIDs      []string `json:"run_ids,omitempty"`
+	BatchIDs    []string `json:"batch_ids,omitempty"`
+	Snapshots   []string `json:"snapshots"`
+	Diffs       []string `json:"diffs"`
 }
 
 func Plan(inputFile string, stdout io.Writer, opts PlanOptions) error {
 	plan, err := agent.NewPlan(inputFile, opts.Goal, agent.GoalOptions{
-		PresetOverride: opts.Preset,
-		MaxClips:       opts.MaxClips,
-		WithExport:     opts.WithExport,
-		WithValidate:   opts.WithValidate,
-		WithReport:     opts.WithReport,
-		WithReportSet:  opts.WithReportSet,
-		Mode:           opts.Mode,
-		Recursive:      opts.Recursive,
-		Once:           opts.Once,
-		Limit:          opts.Limit,
+		PresetOverride:            opts.Preset,
+		MaxClips:                  opts.MaxClips,
+		WithExport:                opts.WithExport,
+		WithValidate:              opts.WithValidate,
+		WithReport:                opts.WithReport,
+		WithReportSet:             opts.WithReportSet,
+		GoalAware:                 opts.GoalAware,
+		GoalUseOllama:             opts.GoalUseOllama,
+		GoalFallbackDeterministic: opts.GoalFallbackDeterministic,
+		Mode:                      opts.Mode,
+		Recursive:                 opts.Recursive,
+		Once:                      opts.Once,
+		Limit:                     opts.Limit,
 	}, time.Now().UTC())
 	if err != nil {
 		return err
@@ -130,6 +139,7 @@ func ExecutePlan(planID string, stdout io.Writer) error {
 			_ = agent.WritePlan(plan)
 			_ = log.Write("ACTION_FAILED", map[string]any{"id": action.ID, "error": err.Error()})
 			_ = log.Write("PLAN_EXECUTION_FAILED", map[string]any{"error": err.Error()})
+			printExecutePlanFailureSummary(stdout, plan, *action)
 			return err
 		}
 		action.Status = "completed"
@@ -145,10 +155,7 @@ func ExecutePlan(planID string, stdout io.Writer) error {
 	plan.Status = "completed"
 	_ = agent.WritePlan(plan)
 	_ = log.Write("PLAN_EXECUTION_COMPLETED", map[string]any{"plan_id": plan.PlanID, "run_id": runID})
-	fmt.Fprintf(stdout, "Plan executed: %s\n", plan.PlanID)
-	if runID != "" {
-		fmt.Fprintf(stdout, "  run id: %s\n", runID)
-	}
+	printExecutePlanSuccessSummary(stdout, plan, runID, batchID)
 	return nil
 }
 
@@ -209,6 +216,15 @@ func PlanArtifacts(planID string, stdout io.Writer, opts PlanArtifactsOptions) e
 	if summary.Review != "" {
 		fmt.Fprintf(stdout, "  review:     %s\n", summary.Review)
 	}
+	if summary.AgentResult != "" {
+		fmt.Fprintf(stdout, "  agent result: %s\n", summary.AgentResult)
+	}
+	if len(summary.RunIDs) > 0 {
+		fmt.Fprintf(stdout, "  run ids:    %s\n", strings.Join(summary.RunIDs, ", "))
+	}
+	if len(summary.BatchIDs) > 0 {
+		fmt.Fprintf(stdout, "  batch ids:  %s\n", strings.Join(summary.BatchIDs, ", "))
+	}
 	fmt.Fprintf(stdout, "  snapshots:  %d\n", len(summary.Snapshots))
 	for _, path := range summary.Snapshots {
 		fmt.Fprintf(stdout, "    - %s\n", path)
@@ -264,6 +280,21 @@ func executeAction(action *agent.Action, plan agent.Plan, runID *string, batchID
 			return fmt.Errorf("validate requires completed run action")
 		}
 		return Validate(*runID, stdout, ValidateOptions{})
+	case "goal_rerank":
+		if *runID == "" {
+			return fmt.Errorf("goal-rerank requires completed run action")
+		}
+		goal, _ := action.Options["goal_text"].(string)
+		return GoalRerankCommand(*runID, stdout, GoalRerankOptions{
+			Goal:                  goal,
+			UseOllama:             boolActionOption(action.Options, "goal_use_ollama"),
+			FallbackDeterministic: boolActionOption(action.Options, "goal_fallback_deterministic"),
+		})
+	case "goal_roughcut":
+		if *runID == "" {
+			return fmt.Errorf("goal-roughcut requires completed run action")
+		}
+		return GoalRoughcutCommand(*runID, stdout, GoalRoughcutOptions{Overwrite: true})
 	default:
 		return fmt.Errorf("unknown action type %q", action.Type)
 	}
@@ -349,6 +380,15 @@ func printPlanArtifactsSummary(stdout io.Writer, planID string) {
 	if summary.Review != "" {
 		fmt.Fprintf(stdout, "    review:     %s\n", summary.Review)
 	}
+	if summary.AgentResult != "" {
+		fmt.Fprintf(stdout, "    agent result: %s\n", summary.AgentResult)
+	}
+	if len(summary.RunIDs) > 0 {
+		fmt.Fprintf(stdout, "    run ids:     %s\n", strings.Join(summary.RunIDs, ", "))
+	}
+	if len(summary.BatchIDs) > 0 {
+		fmt.Fprintf(stdout, "    batch ids:   %s\n", strings.Join(summary.BatchIDs, ", "))
+	}
 	fmt.Fprintf(stdout, "    snapshots:  %d\n", len(summary.Snapshots))
 	if len(summary.Diffs) > 0 {
 		fmt.Fprintln(stdout, "    diffs:")
@@ -365,9 +405,19 @@ func collectPlanArtifacts(planID string) (PlanArtifactsSummary, error) {
 		Plan:      filepath.Join(dir, "agent_plan.json"),
 		ActionLog: filepath.Join(dir, "actions.jsonl"),
 	}
+	plan, err := agent.ReadPlan(planID)
+	if err != nil {
+		return summary, err
+	}
+	summary.RunIDs = uniqueSortedRunIDs(plan)
+	summary.BatchIDs = uniqueSortedBatchIDs(plan)
 	review := filepath.Join(dir, "review.md")
 	if _, err := os.Stat(review); err == nil {
 		summary.Review = review
+	}
+	agentResult := filepath.Join(dir, "agent_result.md")
+	if _, err := os.Stat(agentResult); err == nil {
+		summary.AgentResult = agentResult
 	}
 	snapshots, err := agent.ListSnapshots(planID)
 	if err != nil {
@@ -422,4 +472,66 @@ func presetForExecution(preset string) string {
 		return "shorts"
 	}
 	return preset
+}
+
+func printExecutePlanSuccessSummary(stdout io.Writer, plan agent.Plan, runID string, batchID string) {
+	fmt.Fprintln(stdout, "Plan execution result")
+	fmt.Fprintf(stdout, "  plan id:      %s\n", plan.PlanID)
+	fmt.Fprintf(stdout, "  final status: %s\n", planDefault(plan.Status, "completed"))
+	if runID != "" {
+		runDir := filepath.Join(".byom-video", "runs", runID)
+		fmt.Fprintf(stdout, "  run id:       %s\n", runID)
+		fmt.Fprintf(stdout, "  run dir:      %s\n", runDir)
+		reportPath := filepath.Join(runDir, "report.html")
+		if _, err := os.Stat(reportPath); err == nil {
+			fmt.Fprintf(stdout, "  report path:  %s\n", reportPath)
+		}
+		if _, err := os.Stat(filepath.Join(runDir, "goal_rerank.json")); err == nil {
+			fmt.Fprintf(stdout, "  goal rerank:  %s\n", filepath.Join(runDir, "goal_rerank.json"))
+		}
+		if _, err := os.Stat(filepath.Join(runDir, "goal_roughcut.json")); err == nil {
+			fmt.Fprintf(stdout, "  goal roughcut:%s\n", " "+filepath.Join(runDir, "goal_roughcut.json"))
+		}
+		fmt.Fprintln(stdout, "  next commands:")
+		for _, cmd := range dedupeStrings(suggestNextCommandsForRun(runID)) {
+			fmt.Fprintf(stdout, "    - %s\n", cmd)
+		}
+		return
+	}
+	if batchID != "" {
+		fmt.Fprintf(stdout, "  batch id:      %s\n", batchID)
+		fmt.Fprintln(stdout, "  next commands:")
+		fmt.Fprintf(stdout, "    - byom-video inspect-batch %s\n", batchID)
+	}
+}
+
+func printExecutePlanFailureSummary(stdout io.Writer, plan agent.Plan, action agent.Action) {
+	fmt.Fprintln(stdout, "Plan execution failed")
+	fmt.Fprintf(stdout, "  plan id:      %s\n", plan.PlanID)
+	fmt.Fprintf(stdout, "  final status: failed\n")
+	fmt.Fprintf(stdout, "  failed action:%s %s (%s)\n", " ", action.ID, action.Type)
+	if action.Error != "" {
+		fmt.Fprintf(stdout, "  error:        %s\n", action.Error)
+	}
+	fmt.Fprintln(stdout, "  next commands:")
+	fmt.Fprintf(stdout, "    - byom-video inspect-plan %s\n", plan.PlanID)
+	fmt.Fprintf(stdout, "    - byom-video review-plan %s\n", plan.PlanID)
+}
+
+func suggestNextCommandsForRun(runID string) []string {
+	runDir := filepath.Join(".byom-video", "runs", runID)
+	next := []string{
+		fmt.Sprintf("byom-video inspect %s", runID),
+		fmt.Sprintf("byom-video validate %s", runID),
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "report.html")); err == nil {
+		next = append(next, fmt.Sprintf("byom-video open-report %s", runID))
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "goal_roughcut.json")); err == nil {
+		next = append(next, fmt.Sprintf("byom-video goal-handoff %s --overwrite", runID))
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "ffmpeg_commands.sh")); err == nil {
+		next = append(next, fmt.Sprintf("byom-video export %s", runID))
+	}
+	return next
 }

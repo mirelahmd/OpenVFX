@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/exporter"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/editorartifacts"
+	"github.com/mirelahmd/byom-video/internal/exportartifacts"
+	"github.com/mirelahmd/byom-video/internal/exporter"
+	"github.com/mirelahmd/byom-video/internal/goalartifacts"
+	"github.com/mirelahmd/byom-video/internal/manifest"
 )
 
 type Summary struct {
@@ -111,8 +112,11 @@ func Write(runDir string, m manifest.Manifest) (Summary, error) {
 	writeChunks(&b, filepath.Join(runDir, "chunks.json"))
 	writeHighlights(&b, filepath.Join(runDir, "highlights.json"))
 	writeRoughcut(&b, filepath.Join(runDir, "roughcut.json"))
+	writeGoalAwareEditingIntro(&b, runDir)
+	writeGoalRerank(&b, filepath.Join(runDir, "goal_rerank.json"))
 	writeClipCards(&b, filepath.Join(runDir, "clip_cards.json"))
 	writeEnhancedRoughcut(&b, filepath.Join(runDir, "enhanced_roughcut.json"))
+	writeGoalRoughcut(&b, filepath.Join(runDir, "goal_roughcut.json"))
 	writeSelectedClips(&b, filepath.Join(runDir, "selected_clips.json"))
 	writeExportManifest(&b, filepath.Join(runDir, "export_manifest.json"))
 	writeExpansionOutputs(&b, runDir)
@@ -241,6 +245,9 @@ func writeClipCards(b *bytes.Buffer, path string) {
 		return
 	}
 	fmt.Fprintf(b, "<h2>Clip Cards</h2>\n<p>Card count: %d</p>\n", len(doc.Cards))
+	if doc.Source.GoalRoughcutArtifact != "" {
+		fmt.Fprintf(b, "<p>Source: <code>%s</code></p>\n", Escape(doc.Source.GoalRoughcutArtifact))
+	}
 	b.WriteString("<table><thead><tr><th>title</th><th>range</th><th>captions</th><th>description</th><th>verification</th></tr></thead><tbody>\n")
 	for _, card := range doc.Cards {
 		fmt.Fprintf(b, "<tr><td>%s</td><td>%.3f-%.3f</td><td class=\"preview\">%s</td><td class=\"preview\">%s</td><td>%s</td></tr>\n",
@@ -282,6 +289,9 @@ func writeSelectedClips(b *bytes.Buffer, path string) {
 		return
 	}
 	fmt.Fprintf(b, "<h2>Selected Clips</h2>\n<p>Clip count: %d</p>\n", len(doc.Clips))
+	if source := selectedClipSourceLabel(doc.Source); source != "" {
+		fmt.Fprintf(b, "<p>Source: <code>%s</code></p>\n", Escape(source))
+	}
 	b.WriteString("<table><thead><tr><th>order</th><th>title</th><th>range</th><th>output</th><th>description</th></tr></thead><tbody>\n")
 	for _, clip := range doc.Clips {
 		fmt.Fprintf(b, "<tr><td>%d</td><td>%s</td><td>%.3f-%.3f</td><td><code>%s</code></td><td class=\"preview\">%s</td></tr>\n",
@@ -301,6 +311,74 @@ func writeExportManifest(b *bytes.Buffer, path string) {
 		{"validated", fmt.Sprintf("%d", doc.Summary.Validated)},
 		{"missing", fmt.Sprintf("%d", doc.Summary.Missing)},
 	})
+}
+
+func writeGoalRerank(b *bytes.Buffer, path string) {
+	doc, err := goalartifacts.ReadGoalRerank(path)
+	if err != nil {
+		return
+	}
+	writeKVTable(b, "Goal Rerank", [][2]string{
+		{"goal", doc.Goal},
+		{"mode", doc.Mode},
+		{"preferred style", doc.Constraints.PreferredStyle},
+		{"max total duration", fmt.Sprintf("%.0f seconds", doc.Constraints.MaxTotalDurationSeconds)},
+		{"max clips", fmt.Sprintf("%d", doc.Constraints.MaxClips)},
+		{"ranked highlights", fmt.Sprintf("%d", len(doc.RankedHighlights))},
+	})
+	if len(doc.RankedHighlights) == 0 {
+		return
+	}
+	b.WriteString("<table><thead><tr><th>rank</th><th>highlight</th><th>range</th><th>goal score</th><th>reason</th><th>text</th></tr></thead><tbody>\n")
+	limit := len(doc.RankedHighlights)
+	if limit > 5 {
+		limit = 5
+	}
+	for _, item := range doc.RankedHighlights[:limit] {
+		fmt.Fprintf(b, "<tr><td>%d</td><td>%s</td><td>%.3f-%.3f</td><td>%.3f</td><td>%s</td><td class=\"preview\">%s</td></tr>\n",
+			item.Rank, Escape(item.HighlightID), item.Start, item.End, item.GoalScore, Escape(item.Reason), Escape(preview(item.Text, 220)))
+	}
+	b.WriteString("</tbody></table>\n")
+}
+
+func writeGoalRoughcut(b *bytes.Buffer, path string) {
+	doc, err := goalartifacts.ReadGoalRoughcut(path)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(b, "<h2>Goal Roughcut</h2>\n<p>Goal: %s<br>Clip count: %d<br>Total duration: %.3f seconds</p>\n",
+		Escape(doc.Goal), len(doc.Clips), doc.Plan.TotalDurationSeconds)
+	b.WriteString("<table><thead><tr><th>order</th><th>highlight</th><th>range</th><th>goal score</th><th>reason</th><th>text</th></tr></thead><tbody>\n")
+	for _, clip := range doc.Clips {
+		fmt.Fprintf(b, "<tr><td>%d</td><td>%s</td><td>%.3f-%.3f</td><td>%.3f</td><td>%s</td><td class=\"preview\">%s</td></tr>\n",
+			clip.Order, Escape(clip.HighlightID), clip.Start, clip.End, clip.GoalScore, Escape(clip.Reason), Escape(preview(clip.Text, 220)))
+	}
+	b.WriteString("</tbody></table>\n")
+}
+
+func writeGoalAwareEditingIntro(b *bytes.Buffer, runDir string) {
+	if _, err := os.Stat(filepath.Join(runDir, "goal_roughcut.json")); err != nil {
+		return
+	}
+	b.WriteString("<h2>Goal-Aware Editing</h2>\n<p>These artifacts preserve the original deterministic roughcut and add a separate goal-aware selection path for editor review and export handoff.</p>\n")
+	if _, err := os.Stat(filepath.Join(runDir, "goal_review_bundle.md")); err == nil {
+		fmt.Fprintf(b, "<p>Review bundle: <code>%s</code></p>\n", Escape(filepath.Join(runDir, "goal_review_bundle.md")))
+	}
+}
+
+func selectedClipSourceLabel(source exportartifacts.SelectedClipsSource) string {
+	switch {
+	case source.GoalRoughcutArtifact != "":
+		return source.GoalRoughcutArtifact
+	case source.EnhancedRoughcutArtifact != "":
+		return source.EnhancedRoughcutArtifact
+	case source.ClipCardsArtifact != "":
+		return source.ClipCardsArtifact
+	case source.RoughcutArtifact != "":
+		return source.RoughcutArtifact
+	default:
+		return ""
+	}
 }
 
 func writeExpansionOutputs(b *bytes.Buffer, runDir string) {

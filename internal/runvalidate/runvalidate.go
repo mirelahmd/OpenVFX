@@ -9,14 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/chunks"
-	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/highlights"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
-	"github.com/mirelahmd/OpenVFX/internal/roughcut"
-	"github.com/mirelahmd/OpenVFX/internal/runstore"
-	"github.com/mirelahmd/OpenVFX/internal/transcript"
+	"github.com/mirelahmd/byom-video/internal/chunks"
+	"github.com/mirelahmd/byom-video/internal/editorartifacts"
+	"github.com/mirelahmd/byom-video/internal/exportartifacts"
+	"github.com/mirelahmd/byom-video/internal/goalartifacts"
+	"github.com/mirelahmd/byom-video/internal/highlights"
+	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/roughcut"
+	"github.com/mirelahmd/byom-video/internal/runstore"
+	"github.com/mirelahmd/byom-video/internal/transcript"
 )
 
 type Result struct {
@@ -193,6 +194,8 @@ func validateKnownSchemas(runDir string, result *Result) {
 		{"enhanced_roughcut.json", func(path string) error { _, err := editorartifacts.ValidateEnhancedRoughcutFile(path); return err }},
 		{"selected_clips.json", func(path string) error { _, err := exportartifacts.ValidateSelectedClipsFile(path); return err }},
 		{"export_manifest.json", func(path string) error { _, err := exportartifacts.ValidateExportManifestFile(path); return err }},
+		{"goal_rerank.json", func(path string) error { _, err := goalartifacts.ValidateGoalRerankFile(path); return err }},
+		{"goal_roughcut.json", func(path string) error { _, err := goalartifacts.ValidateGoalRoughcutFile(path); return err }},
 	}
 	for _, check := range checks {
 		path := filepath.Join(runDir, check.path)
@@ -205,7 +208,7 @@ func validateKnownSchemas(runDir string, result *Result) {
 		}
 		result.ChecksPassed = append(result.ChecksPassed, check.path+" schema")
 	}
-	for _, plain := range []string{"captions.srt", "ffmpeg_commands.sh", "report.html", "concat_list.txt", "ffmpeg_concat.sh"} {
+	for _, plain := range []string{"captions.srt", "ffmpeg_commands.sh", "report.html", "concat_list.txt", "ffmpeg_concat.sh", "goal_review_bundle.md"} {
 		path := filepath.Join(runDir, plain)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			result.ChecksPassed = append(result.ChecksPassed, plain+" exists")

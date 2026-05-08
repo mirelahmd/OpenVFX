@@ -15,6 +15,7 @@ models:
       options:
         temperature: 0.2
   routes:
+    goal_reranking: local_qwen
     caption_expansion: local_qwen
     timeline_labeling: local_qwen
     description_expansion: local_qwen

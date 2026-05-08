@@ -62,6 +62,9 @@ func buildPreview(req Request) RequestPreview {
 	case "short_descriptions":
 		user = fmt.Sprintf("Generate concise short descriptions for this clip. Do not invent facts. Return JSON: {\"descriptions\":[\"description\"]}. Decisions: %s. Route: %s. Contract: %s.",
 			strings.Join(decisionBits, " | "), req.RouteName, strings.Join(contractBits, ", "))
+	case "goal_reranking":
+		user = fmt.Sprintf("Rerank these highlight candidates for the user goal. Goal: %v. Constraints: %v. Return JSON: {\"ranked_highlights\":[{\"highlight_id\":\"hl_0001\",\"goal_score\":0.91,\"reason\":\"Strong match for the goal.\"}]}. Candidates: %s.",
+			req.Input.Constraints["goal"], req.Input.Constraints, strings.Join(decisionBits, " | "))
 	default:
 		user = fmt.Sprintf("Task type: %s. Decisions: %d. Route: %s. Contract: %s.",
 			req.TaskType, len(req.Input.Decisions), req.RouteName, strings.Join(contractBits, ", "))
@@ -69,6 +72,15 @@ func buildPreview(req Request) RequestPreview {
 	return RequestPreview{
 		System:       system,
 		User:         user,
-		OutputSchema: "expansion_output.v1",
+		OutputSchema: outputSchema(req.TaskType),
+	}
+}
+
+func outputSchema(taskType string) string {
+	switch taskType {
+	case "goal_reranking":
+		return "goal_rerank.response.v1"
+	default:
+		return "expansion_output.v1"
 	}
 }

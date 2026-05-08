@@ -139,6 +139,29 @@ Compare two plans:
 
 `execute-plan --with-export` and `execute-plan --with-validate` do not mutate saved plans. Create a new plan with those flags instead.
 
+## Execution Results
+
+After `execute-plan`, BYOM Video now prints a concise execution result summary with:
+
+- resulting run id
+- run directory
+- report path when present
+- goal-aware artifacts when created
+- suggested next commands
+
+You can also inspect the result later:
+
+```sh
+./byom-video agent-result <plan_id>
+./byom-video agent-result <plan_id> --write-artifact
+```
+
+This writes:
+
+```text
+.byom-video/plans/<plan_id>/agent_result.md
+```
+
 ## Revise Plans
 
 Revise a plan deterministically:
@@ -164,3 +187,46 @@ Revisions create snapshots before modifying the plan and reset approval when exe
 - There are no provider clients, no model routing, no web server, and no vector database.
 
 This is the first step toward agentic editing: goals become auditable local actions before any automatic execution.
+
+## Goal-Aware Cut Selection
+
+Agent plans can now include explicit goal-aware post-processing actions.
+
+Plan-only preview:
+
+```sh
+./byom-video plan media/Untitled.mov --goal "make a short clip under 60 seconds" --goal-aware --dry-run
+```
+
+Optional local Ollama goal rerank inside a plan:
+
+```sh
+./byom-video plan media/Untitled.mov --goal "make a cinematic short" --goal-aware --goal-use-ollama --goal-fallback-deterministic --dry-run
+```
+
+When `--goal-aware` is present on a file plan, BYOM Video adds:
+
+- `goal_rerank`
+- `goal_roughcut`
+
+Use:
+
+```sh
+./byom-video goal-rerank <run_id> --goal "make a short clip under 60 seconds"
+./byom-video goal-roughcut <run_id>
+```
+
+Optional local Ollama reranking:
+
+```sh
+./byom-video goal-rerank <run_id> --goal "make a cinematic short" --use-ollama --fallback-deterministic
+```
+
+This writes additive artifacts:
+
+- `goal_rerank.json`
+- `goal_roughcut.json`
+
+The original `highlights.json` and `roughcut.json` remain unchanged.
+
+These goal-aware actions run only when the plan explicitly contains them. There are no hidden provider calls.

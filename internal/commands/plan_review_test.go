@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirelahmd/OpenVFX/internal/agent"
+	"github.com/mirelahmd/byom-video/internal/agent"
 )
 
 func TestReviewPlanShowsCommandPreview(t *testing.T) {

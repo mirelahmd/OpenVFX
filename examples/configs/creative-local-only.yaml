@@ -1,0 +1,17 @@
+tools:
+  enabled: false
+
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: ollama
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: none
+      options:
+        temperature: 0.2
+
+  routes:
+    creative.script: local_writer
+    creative.captions: local_writer

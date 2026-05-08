@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -228,5 +229,35 @@ func TestBatchAndWatchGoalMapping(t *testing.T) {
 	}
 	if plan.TargetType != "watch" || plan.Actions[0].Type != "watch_pipeline" {
 		t.Fatalf("plan = %#v", plan)
+	}
+}
+
+func TestGoalAwarePlanAddsActionsAndPreviews(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "input.mp4")
+	if err := os.WriteFile(input, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := NewPlan(input, "make a short clip under 60 seconds", GoalOptions{
+		GoalAware:                 true,
+		GoalUseOllama:             true,
+		GoalFallbackDeterministic: true,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) < 3 {
+		t.Fatalf("expected goal-aware post actions, got %#v", plan.Actions)
+	}
+	if plan.Actions[1].Type != "goal_rerank" || plan.Actions[2].Type != "goal_roughcut" {
+		t.Fatalf("unexpected actions: %#v", plan.Actions)
+	}
+	if !strings.Contains(plan.Actions[1].CommandPreview, "goal-rerank <run_id> --goal ") {
+		t.Fatalf("unexpected rerank preview: %q", plan.Actions[1].CommandPreview)
+	}
+	if !strings.Contains(plan.Actions[1].CommandPreview, "--use-ollama") || !strings.Contains(plan.Actions[1].CommandPreview, "--fallback-deterministic") {
+		t.Fatalf("missing goal-aware flags in preview: %q", plan.Actions[1].CommandPreview)
+	}
+	if plan.Actions[2].CommandPreview != "./byom-video goal-roughcut <run_id>" {
+		t.Fatalf("unexpected roughcut preview: %q", plan.Actions[2].CommandPreview)
 	}
 }

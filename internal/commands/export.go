@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mirelahmd/OpenVFX/internal/exporter"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
-	"github.com/mirelahmd/OpenVFX/internal/report"
+	"github.com/mirelahmd/byom-video/internal/exporter"
+	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/report"
 )
 
 func Export(runID string, stdout io.Writer) error {

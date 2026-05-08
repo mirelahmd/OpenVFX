@@ -120,7 +120,8 @@ func (a OllamaAdapter) Execute(req Request) (Response, error) {
 		Mode:     mode,
 		Warnings: warnings,
 		Details: map[string]any{
-			"adapter": "ollama",
+			"adapter":      "ollama",
+			"raw_response": payload.Response,
 		},
 	}, nil
 }

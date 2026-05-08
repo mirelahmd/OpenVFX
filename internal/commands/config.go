@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/config"
-	"github.com/mirelahmd/OpenVFX/internal/modelrouter"
+	"github.com/mirelahmd/byom-video/internal/config"
+	"github.com/mirelahmd/byom-video/internal/modelrouter"
 )
 
 type ConfigShowOptions struct{ JSON bool }
@@ -31,6 +31,7 @@ type ConfigSummary struct {
 	FFmpegScript  config.FFmpegScriptConfig  `json:"ffmpeg_script"`
 	Report        config.EnabledConfig       `json:"report"`
 	Models        ModelsSummary              `json:"models"`
+	Tools         ToolsSummary               `json:"tools"`
 }
 
 type ModelsSummary struct {
@@ -86,6 +87,7 @@ func ConfigShow(stdout io.Writer, opts ConfigShowOptions) error {
 	fmt.Fprintf(stdout, "    ffmpeg_script: enabled=%t output_format=%s\n", cfg.FFmpegScript.Enabled, emptyDash(cfg.FFmpegScript.OutputFormat))
 	fmt.Fprintf(stdout, "    report:        enabled=%t\n", cfg.Report.Enabled)
 	printModelsSummary(stdout, summary.Models, true)
+	printToolsSummary(stdout, summary.Tools)
 	return nil
 }
 
@@ -227,6 +229,45 @@ func buildConfigSummary(cfg config.Config) ConfigSummary {
 		FFmpegScript:  cfg.FFmpegScript,
 		Report:        cfg.Report,
 		Models:        buildModelsSummary(cfg.Models),
+		Tools: ToolsSummary{
+			Enabled:  cfg.Tools.Enabled,
+			Backends: cloneToolBackends(cfg.Tools.Backends),
+			Routes:   cloneRouting(cfg.Tools.Routes),
+		},
+	}
+}
+
+func printToolsSummary(stdout io.Writer, summary ToolsSummary) {
+	fmt.Fprintln(stdout, "  tools:")
+	fmt.Fprintf(stdout, "    enabled: %t\n", summary.Enabled)
+	if !summary.Enabled {
+		fmt.Fprintln(stdout, "    status:  tools are disabled")
+	}
+	if len(summary.Backends) > 0 {
+		fmt.Fprintln(stdout, "    backends:")
+		for _, name := range sortedToolBackendNames(summary.Backends) {
+			backend := summary.Backends[name]
+			fmt.Fprintf(stdout, "      - %s: kind=%s provider=%s", name, emptyDash(backend.Kind), emptyDash(backend.Provider))
+			if backend.Model != "" {
+				fmt.Fprintf(stdout, " model=%s", backend.Model)
+			}
+			if backend.Endpoint != "" {
+				fmt.Fprintf(stdout, " endpoint=%s", backend.Endpoint)
+			}
+			if backend.Auth.Type != "" {
+				fmt.Fprintf(stdout, " auth=%s", backend.Auth.Type)
+			}
+			if backend.Auth.Env != "" {
+				fmt.Fprintf(stdout, " env=%s", backend.Auth.Env)
+			}
+			fmt.Fprintln(stdout)
+		}
+	}
+	if len(summary.Routes) > 0 {
+		fmt.Fprintln(stdout, "    routes:")
+		for _, key := range sortedRoutingKeys(summary.Routes) {
+			fmt.Fprintf(stdout, "      - %s: %s\n", key, summary.Routes[key])
+		}
 	}
 }
 

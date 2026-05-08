@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/manifest"
 )
 
 func TestValidateAcceptsValidManifestAndEvents(t *testing.T) {

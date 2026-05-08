@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/byom-video/internal/config"
 )
 
 func TestConfigShowRedactsSecretValuesAndPrintsEnvNames(t *testing.T) {

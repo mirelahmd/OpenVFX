@@ -157,3 +157,78 @@ func TestLoadConfigModelsNewShapeWins(t *testing.T) {
 		t.Fatalf("routes = %#v", cfg.Models.Routes)
 	}
 }
+
+func TestLoadConfigToolsSection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultPath)
+	data := []byte(`tools:
+  enabled: true
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: made-up-provider
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: header_env
+        header: x-api-key
+        env: TEST_API_KEY
+      options:
+        temperature: 0.2
+      response_mapping:
+        output_text: $.data.output
+  routes:
+    creative.script: local_writer
+`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Tools.Enabled {
+		t.Fatal("tools enabled = false, want true")
+	}
+	backend := cfg.Tools.Backends["local_writer"]
+	if backend.Provider != "made-up-provider" {
+		t.Fatalf("backend provider = %q", backend.Provider)
+	}
+	if backend.Auth.Env != "TEST_API_KEY" || backend.Auth.Header != "x-api-key" {
+		t.Fatalf("backend auth = %#v", backend.Auth)
+	}
+	if backend.Options["temperature"] != 0.2 {
+		t.Fatalf("backend options = %#v", backend.Options)
+	}
+	if backend.ResponseMapping["output_text"] != "$.data.output" {
+		t.Fatalf("response mapping = %#v", backend.ResponseMapping)
+	}
+	if cfg.Tools.Routes["creative.script"] != "local_writer" {
+		t.Fatalf("tools routes = %#v", cfg.Tools.Routes)
+	}
+}
+
+func TestLoadConfigToolsUnknownProviderAccepted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultPath)
+	data := []byte(`tools:
+  enabled: false
+  backends:
+    custom_backend:
+      kind: custom
+      provider: future-provider
+      endpoint: https://example.com
+      auth:
+        type: none
+  routes:
+    creative.anything: custom_backend
+`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Tools.Backends["custom_backend"].Provider != "future-provider" {
+		t.Fatalf("backend provider = %#v", cfg.Tools.Backends["custom_backend"])
+	}
+}

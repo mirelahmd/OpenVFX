@@ -6,11 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/exporter"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
-	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/byom-video/internal/exporter"
+	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/runstore"
 )
 
 type RunListOptions struct {
@@ -41,6 +42,8 @@ type InspectSummary struct {
 	ExportsDir             string                 `json:"exports_dir,omitempty"`
 	ExportedFiles          []string               `json:"exported_files,omitempty"`
 	ReportPath             string                 `json:"report_path,omitempty"`
+	GoalReviewBundlePath   string                 `json:"goal_review_bundle_path,omitempty"`
+	AgentResultPath        string                 `json:"agent_result_path,omitempty"`
 	TranscriptSegmentCount *int                   `json:"transcript_segment_count,omitempty"`
 	ChunkCount             *int                   `json:"chunk_count,omitempty"`
 	HighlightCount         *int                   `json:"highlight_count,omitempty"`
@@ -48,6 +51,10 @@ type InspectSummary struct {
 	ClipCardCount          *int                   `json:"clip_card_count,omitempty"`
 	EnhancedRoughcutCount  *int                   `json:"enhanced_roughcut_count,omitempty"`
 	SelectedClipCount      *int                   `json:"selected_clip_count,omitempty"`
+	SelectedClipSource     string                 `json:"selected_clip_source,omitempty"`
+	GoalRerankCount        *int                   `json:"goal_rerank_count,omitempty"`
+	GoalRerankMode         string                 `json:"goal_rerank_mode,omitempty"`
+	GoalRoughcutClipCount  *int                   `json:"goal_roughcut_clip_count,omitempty"`
 	ExportManifestSummary  *ExportManifestSummary `json:"export_manifest_summary,omitempty"`
 	ConcatPlanPresent      bool                   `json:"concat_plan_present,omitempty"`
 	ExportedFileCount      int                    `json:"exported_file_count"`
@@ -139,6 +146,12 @@ func Inspect(runID string) (InspectSummary, error) {
 		if artifact.Path == "report.html" {
 			summary.ReportPath = fullPath
 		}
+		if artifact.Path == "goal_review_bundle.md" {
+			summary.GoalReviewBundlePath = fullPath
+		}
+	}
+	if agentResultPath, ok := findAgentResultForRun(runID); ok {
+		summary.AgentResultPath = agentResultPath
 	}
 	if len(summary.ExportedFiles) == 0 {
 		files, err := exporter.DiscoverExportedFiles(runDir)
@@ -167,6 +180,18 @@ func Inspect(runID string) (InspectSummary, error) {
 	}
 	if count, ok := countJSONList(filepath.Join(runDir, "selected_clips.json"), "clips"); ok {
 		summary.SelectedClipCount = &count
+	}
+	if source, ok := readSelectedClipSource(filepath.Join(runDir, "selected_clips.json")); ok {
+		summary.SelectedClipSource = source
+	}
+	if count, ok := countJSONList(filepath.Join(runDir, "goal_rerank.json"), "ranked_highlights"); ok {
+		summary.GoalRerankCount = &count
+	}
+	if mode, ok := readStringField(filepath.Join(runDir, "goal_rerank.json"), "mode"); ok {
+		summary.GoalRerankMode = mode
+	}
+	if count, ok := countJSONList(filepath.Join(runDir, "goal_roughcut.json"), "clips"); ok {
+		summary.GoalRoughcutClipCount = &count
 	}
 	if manifestSummary, ok := readExportManifestSummary(filepath.Join(runDir, "export_manifest.json")); ok {
 		summary.ExportManifestSummary = &manifestSummary
@@ -213,7 +238,7 @@ func artifactName(artifactType string) (string, error) {
 	switch artifactType {
 	case "":
 		return "", nil
-	case "manifest", "events", "metadata", "transcript", "captions", "chunks", "highlights", "roughcut", "report", "export_validation", "clip_cards", "clip_cards_review", "enhanced_roughcut", "selected_clips", "export_manifest", "concat_list", "ffmpeg_concat":
+	case "manifest", "events", "metadata", "transcript", "captions", "chunks", "highlights", "roughcut", "report", "export_validation", "clip_cards", "clip_cards_review", "enhanced_roughcut", "selected_clips", "export_manifest", "concat_list", "ffmpeg_concat", "goal_rerank", "goal_roughcut", "goal_review_bundle":
 		return artifactType, nil
 	case "export-validation":
 		return "export_validation", nil
@@ -258,9 +283,94 @@ func readExportManifestSummary(path string) (ExportManifestSummary, bool) {
 	return doc.Summary, true
 }
 
+func readStringField(path string, key string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", false
+	}
+	raw, ok := doc[key]
+	if !ok {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	return value, value != ""
+}
+
+func readSelectedClipSource(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var doc struct {
+		Source struct {
+			GoalRoughcutArtifact     string `json:"goal_roughcut_artifact"`
+			EnhancedRoughcutArtifact string `json:"enhanced_roughcut_artifact"`
+			ClipCardsArtifact        string `json:"clip_cards_artifact"`
+			RoughcutArtifact         string `json:"roughcut_artifact"`
+		} `json:"source"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return "", false
+	}
+	switch {
+	case strings.TrimSpace(doc.Source.GoalRoughcutArtifact) != "":
+		return "goal_roughcut", true
+	case strings.TrimSpace(doc.Source.EnhancedRoughcutArtifact) != "":
+		return "enhanced_roughcut", true
+	case strings.TrimSpace(doc.Source.ClipCardsArtifact) != "":
+		return "clip_cards", true
+	case strings.TrimSpace(doc.Source.RoughcutArtifact) != "":
+		return "roughcut", true
+	default:
+		return "", false
+	}
+}
+
 func emptyDefault(value string, fallback string) string {
 	if value == "" {
 		return fallback
 	}
 	return value
+}
+
+func findAgentResultForRun(runID string) (string, bool) {
+	entries, err := os.ReadDir(".byom-video/plans")
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		planPath := filepath.Join(".byom-video/plans", entry.Name(), "agent_plan.json")
+		data, err := os.ReadFile(planPath)
+		if err != nil {
+			continue
+		}
+		var plan struct {
+			Actions []struct {
+				RunID string `json:"run_id"`
+			} `json:"actions"`
+		}
+		if err := json.Unmarshal(data, &plan); err != nil {
+			continue
+		}
+		for _, action := range plan.Actions {
+			if strings.TrimSpace(action.RunID) == runID {
+				path := filepath.Join(".byom-video/plans", entry.Name(), "agent_result.md")
+				if _, err := os.Stat(path); err == nil {
+					return path, true
+				}
+			}
+		}
+	}
+	return "", false
 }

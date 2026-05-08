@@ -1,0 +1,19 @@
+tools:
+  enabled: false
+
+  backends:
+    custom_video_backend:
+      kind: video_generation
+      provider: custom-http
+      model: placeholder-video-model
+      endpoint: https://example.com/generate
+      auth:
+        type: bearer_env
+        env: VIDEO_API_KEY
+      request_template: video_generation_v1
+      response_mapping:
+        output_url: $.data.video_url
+        job_id: $.data.job_id
+
+  routes:
+    creative.video_broll: custom_video_backend

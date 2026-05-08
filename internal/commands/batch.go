@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/batch"
+	"github.com/mirelahmd/byom-video/internal/batch"
 )
 
 type BatchOptions struct {

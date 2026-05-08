@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/editorartifacts"
+	"github.com/mirelahmd/byom-video/internal/manifest"
 )
 
 func TestClipCardsFromRoughcutOnly(t *testing.T) {
@@ -272,5 +272,36 @@ func TestClipCardsJSONOutput(t *testing.T) {
 	}
 	if summary.Count != 1 {
 		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestClipCardsPreferGoalRoughcutUsesGoalSource(t *testing.T) {
+	t.Chdir(t.TempDir())
+	runID, runDir := setupGoalAwareRun(t)
+	if err := writeJSONFile(filepath.Join(runDir, "goal_roughcut.json"), map[string]any{
+		"schema_version": "goal_roughcut.v1",
+		"created_at":     time.Now().UTC(),
+		"run_id":         runID,
+		"goal":           "make a short clip under 60 seconds",
+		"source":         map[string]any{"goal_rerank_artifact": "goal_rerank.json", "roughcut_artifact": "roughcut.json"},
+		"plan":           map[string]any{"title": "Goal-Aware Roughcut Plan", "intent": "Select clips matching the user goal.", "total_duration_seconds": 28.4},
+		"clips": []map[string]any{
+			{"id": "goal_clip_0001", "highlight_id": "hl_0001", "chunk_id": "chunk_0001", "start": 0, "end": 28.4, "duration_seconds": 28.4, "order": 1, "goal_score": 0.91, "reason": "Strong match", "text": "cinematic opening shot with strong visual moment"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClipCardsCommand(runID, &bytes.Buffer{}, ClipCardsOptions{PreferGoalRoughcut: true}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := editorartifacts.ReadClipCards(filepath.Join(runDir, "clip_cards.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Source.GoalRoughcutArtifact != "goal_roughcut.json" {
+		t.Fatalf("unexpected source: %+v", doc.Source)
+	}
+	if len(doc.Cards) != 1 || doc.Cards[0].ClipID != "goal_clip_0001" {
+		t.Fatalf("unexpected cards: %+v", doc.Cards)
 	}
 }

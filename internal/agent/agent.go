@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/events"
-	"github.com/mirelahmd/OpenVFX/internal/runctx"
+	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/byom-video/internal/runctx"
 )
 
 const PlansRoot = ".byom-video/plans"
@@ -55,16 +55,19 @@ type Safety struct {
 }
 
 type GoalOptions struct {
-	PresetOverride string
-	MaxClips       int
-	WithExport     bool
-	WithValidate   bool
-	WithReport     bool
-	WithReportSet  bool
-	Mode           string
-	Recursive      bool
-	Once           bool
-	Limit          int
+	PresetOverride            string
+	MaxClips                  int
+	WithExport                bool
+	WithValidate              bool
+	WithReport                bool
+	WithReportSet             bool
+	GoalAware                 bool
+	GoalUseOllama             bool
+	GoalFallbackDeterministic bool
+	Mode                      string
+	Recursive                 bool
+	Once                      bool
+	Limit                     int
 }
 
 func NewPlan(inputPath string, goal string, opts GoalOptions, now time.Time) (Plan, error) {
@@ -82,6 +85,9 @@ func NewPlan(inputPath string, goal string, opts GoalOptions, now time.Time) (Pl
 	targetType, err := InferTargetType(abs, goal, opts.Mode)
 	if err != nil {
 		return Plan{}, err
+	}
+	if opts.GoalAware && targetType != "file" {
+		return Plan{}, fmt.Errorf("goal-aware planning currently only supports file target mode")
 	}
 	preset, runOptions, err := ParseGoal(goal, opts)
 	if err != nil {
@@ -112,6 +118,33 @@ func NewPlan(inputPath string, goal string, opts GoalOptions, now time.Time) (Pl
 		Options:        runOptions,
 	}}
 	next := 2
+	if opts.GoalAware {
+		goalOptions := map[string]any{
+			"goal_aware":                  true,
+			"goal_text":                   goal,
+			"goal_use_ollama":             opts.GoalUseOllama,
+			"goal_fallback_deterministic": opts.GoalFallbackDeterministic,
+		}
+		actions = append(actions,
+			Action{
+				ID:             actionID(next),
+				Type:           "goal_rerank",
+				Status:         "planned",
+				Description:    "Rerank highlights against the user goal",
+				CommandPreview: CommandPreviewForOptions("goal_rerank", abs, preset, "", goalOptions),
+				Options:        goalOptions,
+			},
+			Action{
+				ID:             actionID(next + 1),
+				Type:           "goal_roughcut",
+				Status:         "planned",
+				Description:    "Build goal-aware roughcut from reranked highlights",
+				CommandPreview: CommandPreviewForOptions("goal_roughcut", abs, preset, "", map[string]any{"goal_aware": true}),
+				Options:        map[string]any{"goal_aware": true},
+			},
+		)
+		next += 2
+	}
 	if opts.WithExport {
 		actions = append(actions, Action{ID: actionID(next), Type: "export_run", Status: "planned", Description: "Run explicit export", CommandPreview: "./byom-video export <run_id>", Options: map[string]any{}})
 		next++
@@ -327,6 +360,23 @@ func CommandPreview(actionType string, path string, preset string, runID string,
 			runID = "<run_id>"
 		}
 		return "./byom-video validate " + runID
+	case "goal_rerank":
+		if runID == "" {
+			runID = "<run_id>"
+		}
+		cmd := "./byom-video goal-rerank " + runID
+		if opts.GoalUseOllama {
+			cmd += " --use-ollama"
+		}
+		if opts.GoalFallbackDeterministic {
+			cmd += " --fallback-deterministic"
+		}
+		return cmd
+	case "goal_roughcut":
+		if runID == "" {
+			runID = "<run_id>"
+		}
+		return "./byom-video goal-roughcut " + runID
 	default:
 		return ""
 	}
@@ -417,6 +467,26 @@ func CommandPreviewForOptions(actionType string, path string, preset string, run
 			runID = "<run_id>"
 		}
 		return "./byom-video validate " + runID
+	case "goal_rerank":
+		if runID == "" {
+			runID = "<run_id>"
+		}
+		cmd := "./byom-video goal-rerank " + runID
+		if goal, ok := options["goal_text"].(string); ok && strings.TrimSpace(goal) != "" {
+			cmd += " --goal " + fmt.Sprintf("%q", goal)
+		}
+		if boolMapOption(options, "goal_use_ollama") {
+			cmd += " --use-ollama"
+		}
+		if boolMapOption(options, "goal_fallback_deterministic") {
+			cmd += " --fallback-deterministic"
+		}
+		return cmd
+	case "goal_roughcut":
+		if runID == "" {
+			runID = "<run_id>"
+		}
+		return "./byom-video goal-roughcut " + runID
 	default:
 		return ""
 	}
@@ -461,7 +531,7 @@ func optionValue(options map[string]any, key string) (string, bool) {
 
 func allowedActionType(value string) bool {
 	switch value {
-	case "run_pipeline", "batch_pipeline", "watch_pipeline", "export_run", "validate_run":
+	case "run_pipeline", "batch_pipeline", "watch_pipeline", "export_run", "validate_run", "goal_rerank", "goal_roughcut":
 		return true
 	default:
 		return false

@@ -32,6 +32,7 @@ models:
 
   routes:
     highlight_reasoning: premium_reasoner
+    goal_reranking: local_qwen
     caption_expansion: local_qwen
     timeline_labeling: local_qwen
     verification: premium_reasoner
@@ -55,6 +56,7 @@ Routes map work categories to logical model entries:
 ```yaml
 routes:
   highlight_reasoning: premium_reasoner
+  goal_reranking: local_qwen
   caption_expansion: local_qwen
 ```
 
@@ -86,6 +88,7 @@ Validation checks that every route points to an existing entry.
 ./byom-video expand <run_id> --dry-run
 ./byom-video expand <run_id> --overwrite
 ./byom-video review-model-requests <run_id>
+./byom-video goal-rerank <run_id> --goal "make a cinematic short" --use-ollama
 ```
 
 The commands print logical entry names, provider type, model name, role, optional `base_url`, and `api_key_env` names only. They never print environment variable values.
@@ -108,6 +111,8 @@ The commands print logical entry names, provider type, model name, role, optiona
 `expand-local-stub` uses the same adapter interface as a future real provider path, but executes only a local deterministic stub and writes the same `expansion_output.v1` files as `expand-stub`.
 
 `expand` is the first real provider execution path. In this milestone it only supports local Ollama routes, requires `models.enabled: true`, and only runs when the user explicitly invokes `expand`.
+
+`goal-rerank --use-ollama` is the first goal-aware local reasoning path. It only uses a local Ollama route when the user explicitly requests it.
 
 `models doctor` explicitly checks local Ollama connectivity for configured Ollama entries. It does not check cloud providers.
 
@@ -159,3 +164,20 @@ The intended direction is:
 - verifier checks drift against the mask
 
 Cheap models can expand style. Cheap models cannot expand truth.
+
+## Creative Tool Registry
+
+Model routes are not the only registry layer anymore. `tools` is a separate provider-agnostic capability registry for broader creative planning such as script, voice, image, video, caption, audio, and render tasks.
+
+Use `models` for currently implemented model execution paths.
+
+Use `tools` for capability planning:
+
+```sh
+./byom-video tools
+./byom-video tools validate
+./byom-video tools requirements --goal "make a cinematic short with narration and AI b-roll"
+./byom-video creative-plan media/Untitled.mov --goal "make a cinematic short with narration and AI b-roll"
+```
+
+This planning layer remains local and artifact-only. It does not call providers.

@@ -17,6 +17,7 @@ type ClipCards struct {
 
 type ClipCardsSource struct {
 	RoughcutArtifact      string `json:"roughcut_artifact"`
+	GoalRoughcutArtifact  string `json:"goal_roughcut_artifact,omitempty"`
 	InferenceMaskArtifact string `json:"inference_mask_artifact,omitempty"`
 	ExpansionsDir         string `json:"expansions_dir,omitempty"`
 }

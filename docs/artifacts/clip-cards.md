@@ -47,3 +47,11 @@ Produced by:
 ```sh
 ./byom-video clip-cards <run_id>
 ```
+
+Optional goal-aware source selection:
+
+```sh
+./byom-video clip-cards <run_id> --prefer-goal-roughcut
+```
+
+When `--prefer-goal-roughcut` is used, `clip_cards.json` is built from `goal_roughcut.json` instead of the default roughcut path. This stays explicit and local.

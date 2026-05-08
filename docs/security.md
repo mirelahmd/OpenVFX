@@ -15,3 +15,6 @@ Operational caveats:
 - exported media and generated reports may contain sensitive content if your source media does
 - local shell scripts such as `ffmpeg_commands.sh` and `ffmpeg_concat.sh` are generated for inspection before execution
 - watch mode is polling-based and uses local registry files
+- tool and model config should reference secrets by env var name instead of embedding raw keys in `byom-video.yaml`
+- `tools validate --check-env` may check whether env vars exist, but it never prints their values
+- creative tool planning and requirements detection do not call providers

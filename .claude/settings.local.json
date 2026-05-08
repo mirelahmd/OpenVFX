@@ -16,7 +16,11 @@
       "Bash(gofmt -w /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/verify_expansions.go)",
       "Bash(gofmt -l /Users/mireliftikharahmed/Documents/BYOMVIDEO/internal/commands/verify_expansions.go)",
       "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/scripts/smoke-verify-expansions.sh)",
-      "Bash(./byom-video help *)"
+      "Bash(./byom-video help *)",
+      "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/install.sh)",
+      "Bash(chmod +x /Users/mireliftikharahmed/Documents/BYOMVIDEO/scripts/smoke-external-install.sh)",
+      "Bash(make build *)",
+      "Bash(./byom-video version *)"
     ]
   }
 }

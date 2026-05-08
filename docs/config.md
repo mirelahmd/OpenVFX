@@ -113,3 +113,40 @@ Model configuration is disabled by default:
 ```
 
 The commands show logical model entry names, provider type, model, role, optional `base_url`, and `api_key_env` names. They never print environment variable values and never call provider APIs. Provider strings are freeform; examples are illustrative.
+
+## Creative Tools
+
+The `tools` section is a provider-agnostic creative capability registry. It is for config, validation, and planning only.
+
+```yaml
+tools:
+  enabled: false
+
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: ollama
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: none
+
+  routes:
+    creative.script: local_writer
+    creative.captions: local_writer
+```
+
+Use:
+
+```sh
+./byom-video tools
+./byom-video tools --json
+./byom-video tools validate
+./byom-video tools validate --strict
+./byom-video tools validate --check-env
+./byom-video tools requirements --goal "make a cinematic short with narration"
+```
+
+Known capability kinds are documented, but unknown kinds are warnings by default and strict errors only when `--strict` is used.
+
+This layer does not call providers. Secret values should stay in environment variables. Inspection commands only print env var names.

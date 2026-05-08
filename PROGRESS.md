@@ -4631,3 +4631,1283 @@ Goal: Verify the full external user install and basic pipeline flow from a clean
 
 Wire an LLM (local Ollama) into the highlight selection and roughcut decisions so the `--goal` text actually influences what gets cut.
 <!-- TEST PHASE 1 END -->
+
+
+## Prompt 036 - Install Module Hygiene Hardening
+
+<!-- PROMPT 036 START -->
+Goal: Harden install/module/release hygiene after external-user install testing exposed alpha install issues.
+
+Parts:
+- A: Module path hygiene — rename to lowercase github.com/mirelahmd/byom-video
+- B: .gitignore hardening — anchor root patterns, add docs note
+- C: install.sh hardening — env vars, persistent clone dir, proper workers install
+- D: doctor hardening — resolution order, worker import checks, --transcription flag, OPTIONAL status
+- E: External install smoke script
+- F: Version build metadata injection via ldflags, Makefile targets
+- G: Docs update — quickstart, release-checklist, limitations, README
+- H: Tests — doctor python resolution order, worker import check, version defaults
+- I: PROGRESS.md
+<!-- PROMPT 036 END -->
+
+## Handoff 036
+
+<!-- HANDOFF 036 START -->
+What changed:
+
+**Module path:**
+- Before: `github.com/mirelahmd/OpenVFX`
+- After: `github.com/mirelahmd/byom-video`
+- All 54 Go source files updated via sed.
+- `go test ./...` passes after rename.
+- NOTE: `go install github.com/mirelahmd/byom-video/cmd/byom-video@latest` requires renaming the GitHub repo from `OpenVFX` to `byom-video`. Until the rename, use `GOPROXY=direct GONOSUMDB='*'` with a versioned tag.
+
+**.gitignore changes:**
+- Already correct from Test Phase 1 fixes.
+- Added tag policy and gitignore hygiene steps to `docs/release-checklist.md`.
+
+**install.sh behavior:**
+- Accepts env vars: `BYOM_VIDEO_REPO_URL`, `BYOM_VIDEO_REF`, `BYOM_VIDEO_INSTALL_DIR`, `BYOM_VIDEO_PYTHON`, `BYOM_VIDEO_SKIP_PYTHON`.
+- Clones worker source to `$HOME/.byom-video/src/byom-video` (persistent, updates on re-run).
+- Installs `workers[transcribe]` with pip install -e.
+- Appends to shell rc without duplicating lines.
+- Prints clear steps and warnings without pretending success on failure.
+- Never touches user media or run artifacts.
+
+**doctor behavior:**
+- New `DoctorOptions{Transcription bool}` struct.
+- Python resolution order: `BYOM_VIDEO_PYTHON` → config `python.interpreter` → `python3` on PATH.
+- Shows source label in output: `OK configured python [BYOM_VIDEO_PYTHON]`, `[config]`, or `[PATH]`.
+- Checks `byom_video_workers` importable.
+- Checks `faster_whisper` importable.
+- When `--transcription` not set: shows `OPTIONAL` for missing worker/whisper.
+- When `--transcription` set: shows `MISSING` and prints transcription check active notice.
+- `byom-video doctor --transcription` is the new strict transcription check.
+
+**version/build metadata:**
+- `make build` injects version, commit (git short hash), and build date via ldflags.
+- `make install-local` installs with metadata to `~/go/bin`.
+- `make release-build` adds `-trimpath` for clean release binaries.
+
+**Files added/modified:**
+- Modified `go.mod` — module path rename.
+- Modified all 54 `.go` files — import path update.
+- Modified `internal/commands/doctor.go` — full rewrite with DoctorOptions, resolution order, import checks.
+- Added `internal/commands/doctor_test.go` — 10 tests.
+- Modified `internal/cli/root.go` — doctor case updated, parseDoctorArgs added, usage line updated.
+- Modified `install.sh` — full rewrite with env vars and persistent clone dir.
+- Modified `Makefile` — ldflags, install-local, release-build, external-install-smoke targets.
+- Added `scripts/smoke-external-install.sh`.
+- Modified `docs/release-checklist.md` — artifact hygiene, module path policy, tag policy.
+- Modified `docs/quickstart.md` — updated install paths and Python setup.
+- Modified `docs/limitations.md` — added install/module/tag limitations.
+- Modified `README.md` — updated install section and go install note.
+
+Commands run:
+```sh
+sed -i '' 's|github.com/mirelahmd/OpenVFX|github.com/mirelahmd/byom-video|g' go.mod
+find . -name "*.go" -exec sed -i '' 's|github.com/mirelahmd/OpenVFX|github.com/mirelahmd/byom-video|g' {} \;
+make build
+make install-local
+go test ./...
+python3 -m compileall -q workers/byom_video_workers
+scripts/smoke-external-install.sh
+```
+
+Test results:
+- `go test ./...` — ALL PASS (23 packages, 160+ tests).
+- `go build ./cmd/byom-video` — passed.
+- `python3 -m compileall -q workers/byom_video_workers` — passed.
+- `scripts/smoke-external-install.sh` — passed (go install from remote skipped pending GitHub repo rename).
+- `make build` — version/commit/build-date injected correctly.
+
+External install smoke result:
+- Passed. Binary built locally, init/doctor/version all ran correctly.
+- go install from remote skipped — requires GitHub repo rename from `OpenVFX` to `byom-video`.
+
+Known limitations:
+- `go install github.com/mirelahmd/byom-video/cmd/byom-video@latest` will not work until GitHub repo is renamed. Current workaround: `GOPROXY=direct GONOSUMDB='*' go install github.com/mirelahmd/OpenVFX/cmd/byom-video@<tag>`.
+- External install smoke does not test the full remote `go install` path for the same reason.
+- Never reuse pushed tag names — CDN caches by tag name.
+
+Next recommended milestone after Prompt 036:
+- Rename GitHub repo from `OpenVFX` to `byom-video` and push a new tag for the full `go install` path to work cleanly.
+- Wire LLM (local Ollama) into highlight selection so `--goal` text influences what gets cut.
+<!-- HANDOFF 036 END -->
+
+## Prompt 037 - Goal-Aware Roughcut
+
+<!-- PROMPT 037 START -->
+Goal:
+- Add goal-aware highlight reranking and roughcut selection using local Ollama when explicitly requested, while preserving deterministic fallback.
+- Add `goal-rerank <run_id> --goal "<text>"`.
+- Add `goal-roughcut <run_id>`.
+- Keep local-first and artifact-first.
+- Do not call providers during the normal pipeline unless a goal-aware model flag is explicitly passed.
+- Do not add cloud providers, web server, Docker, vector DB, or NLE integrations.
+<!-- PROMPT 037 END -->
+
+## Handoff 037
+
+<!-- HANDOFF 037 START -->
+What changed:
+- Added `goal-rerank <run_id> --goal <text>` to produce `goal_rerank.json` from existing `highlights.json`.
+- Added deterministic goal parsing and deterministic highlight reranking.
+- Added optional local Ollama reranking behind `--use-ollama`.
+- Added `--fallback-deterministic` so Ollama rerank can fall back visibly instead of failing closed.
+- Added `goal-roughcut <run_id>` to produce `goal_roughcut.json` from ranked highlights.
+- Added goal-aware artifact schemas and validation helpers.
+- Extended inspect output to show goal rerank count, goal rerank mode, and goal roughcut clip count.
+- Extended report generation to include Goal Rerank and Goal Roughcut sections.
+- Extended run validation to validate `goal_rerank.json` and `goal_roughcut.json` when present.
+- Added a deterministic smoke script for the goal-aware flow.
+- Updated local config defaults and example config to include `goal_reranking` route examples.
+- Updated README, agent docs, model docs, and artifact docs for goal-aware flows.
+
+Files added/modified:
+- Added `internal/goalartifacts/artifacts.go`.
+- Added `internal/commands/goal_aware.go`.
+- Added `internal/commands/goal_aware_test.go`.
+- Added `docs/artifacts/goal-rerank.md`.
+- Added `docs/artifacts/goal-roughcut.md`.
+- Added `scripts/smoke-goal-aware.sh`.
+- Modified `internal/modelrouter/dryrun.go`.
+- Modified `internal/modelrouter/ollama.go`.
+- Modified `internal/runinfo/runinfo.go`.
+- Modified `internal/runvalidate/runvalidate.go`.
+- Modified `internal/report/report.go`.
+- Modified `internal/commands/runs.go`.
+- Modified `internal/cli/root.go`.
+- Modified `internal/config/config.go`.
+- Modified `byom-video.yaml`.
+- Modified `examples/configs/local-only.yaml`.
+- Modified `docs/artifacts/README.md`.
+- Modified `docs/agent.md`.
+- Modified `docs/models.md`.
+- Modified `README.md`.
+- Modified `PROGRESS.md`.
+
+New commands:
+```sh
+./byom-video goal-rerank <run_id> --goal "<text>"
+./byom-video goal-roughcut <run_id>
+```
+
+New flags:
+```sh
+./byom-video goal-rerank <run_id> --goal "<text>" --use-ollama
+./byom-video goal-rerank <run_id> --goal "<text>" --fallback-deterministic
+
+./byom-video goal-roughcut <run_id> --overwrite
+./byom-video goal-roughcut <run_id> --json
+```
+
+Goal parsing behavior:
+- Deterministically extracts:
+  - `under 60 seconds` / `less than 60 seconds` -> `max_total_duration_seconds`
+  - `make 3 clips` / `3 shorts` -> `max_clips`
+  - `short`, `shorts`, `reel`, `tiktok`, `instagram` -> `preferred_style: shorts`
+  - `cinematic`, `technical`, `funny`, `emotional` -> matching style
+- If no constraints are found, defaults are:
+  - `max_total_duration_seconds: 60`
+  - `max_clips: 5`
+  - `preferred_style: general`
+
+Deterministic rerank behavior:
+- Uses existing highlight score plus simple goal matching.
+- Boosts highlights when goal keywords appear in highlight text.
+- Penalizes highlights that exceed the parsed max duration.
+- Prefers shorter clips for shorts-style goals.
+- Writes `goal_rerank.json` with:
+  - original score
+  - goal score
+  - rank
+  - deterministic reason
+- Does not call any model provider.
+
+Ollama rerank behavior:
+- Only runs when `--use-ollama` is passed.
+- Requires:
+  - `models.enabled: true`
+  - configured `models.routes.goal_reranking`
+- Sends compact highlight candidate data, goal text, and parsed constraints to the existing local Ollama adapter.
+- Expects JSON shaped like:
+```json
+{
+  "ranked_highlights": [
+    {
+      "highlight_id": "hl_0001",
+      "goal_score": 0.91,
+      "reason": "Strong match for the goal."
+    }
+  ]
+}
+```
+- If the response JSON is invalid or unusable:
+  - fails cleanly by default
+  - falls back to deterministic mode only when `--fallback-deterministic` is passed
+- No cloud providers or API keys are used.
+
+Goal roughcut behavior:
+- Reads `goal_rerank.json`.
+- Selects ranked highlights in rank order.
+- Respects:
+  - `max_total_duration_seconds`
+  - `max_clips`
+- Then reorders selected clips into original timeline order.
+- Writes additive `goal_roughcut.json`.
+- Leaves the original `roughcut.json` unchanged.
+- Records `goal_roughcut.json` in the manifest.
+
+Report/inspect integration:
+- `inspect <run_id>` now shows:
+  - goal rerank count
+  - goal rerank mode
+  - goal roughcut clip count
+- `report.html` now includes:
+  - Goal Rerank section
+  - Goal Roughcut section
+  - user goal
+  - selected clips
+  - goal scores
+  - reasons
+
+Commands run:
+```sh
+gofmt -w internal/goalartifacts/artifacts.go internal/commands/goal_aware.go internal/commands/goal_aware_test.go internal/modelrouter/dryrun.go internal/modelrouter/ollama.go internal/runinfo/runinfo.go internal/runvalidate/runvalidate.go internal/report/report.go internal/cli/root.go internal/commands/runs.go internal/config/config.go
+chmod +x scripts/smoke-goal-aware.sh
+go test ./...
+go build ./cmd/byom-video
+python3 -m compileall -q workers/byom_video_workers
+scripts/smoke-goal-aware.sh
+```
+
+Test results:
+- `go test ./...` passed.
+- `go build ./cmd/byom-video` passed.
+- `python3 -m compileall -q workers/byom_video_workers` passed.
+- `scripts/smoke-goal-aware.sh` passed.
+- Smoke created `goal_rerank.json`, created `goal_roughcut.json`, validated both artifacts, and showed the new goal-aware counts in `inspect`.
+
+How to run smoke goal-aware test:
+```sh
+scripts/smoke-goal-aware.sh
+```
+
+Optional Ollama goal-aware command:
+```sh
+./byom-video goal-rerank <run_id> --goal "make a cinematic short" --use-ollama --fallback-deterministic
+```
+
+Known limitations:
+- Goal-aware reranking is command-level and explicit; it is not yet integrated into the default pipeline or agent plan execution path.
+- Ollama reranking is local-only.
+- Goal parsing is intentionally simple string matching and numeric extraction.
+- Deterministic reranking remains heuristic.
+- Goal roughcut selects from ranked highlights only; it does not re-segment media.
+- No cloud providers, web server, Docker, vector DB, or NLE integrations were added.
+
+Next recommended milestone:
+- Add minimal plan-level `--goal-aware` support so approved plans can optionally invoke goal-aware rerank and goal roughcut explicitly.
+- Add richer deterministic goal parsing for clip subsets and more style controls.
+- Add deeper Ollama response validation and optional rerank review artifacts.
+- Extend goal-aware selection into export-facing clip-card and selected-clip ordering workflows.
+
+Errors or assumptions:
+- Assumed the first explicit count in a goal mentioning `clips` or `shorts` should become `max_clips`.
+- Assumed goal-aware reranking should overwrite `goal_rerank.json` by design so iterative reruns stay simple.
+- Assumed goal-aware roughcut should stay additive and should never mutate the original `roughcut.json`.
+- Kept agent-plan integration minimal in this prompt and documented it as future work.
+<!-- HANDOFF 037 END -->
+
+## Prompt 038 - Agent Goal-Aware Execution
+
+<!-- PROMPT 038 START -->
+Goal:
+- Wire goal-aware reranking and goal-aware roughcut into agent plans, execution, clip cards, selected clips, and export handoff.
+- Add `plan --goal-aware`.
+- Add explicit goal-aware plan actions and execution support.
+- Add `clip-cards --prefer-goal-roughcut`, `selected-clips --prefer-goal-roughcut`, and `goal-handoff <run_id>`.
+- Keep local-first and artifact-first.
+- Use Ollama only when explicitly requested.
+- Do not add cloud providers, Docker, vector DB, web server, or NLE integrations.
+<!-- PROMPT 038 END -->
+
+## Handoff 038
+
+<!-- HANDOFF 038 START -->
+What changed:
+- Added agent plan support for `--goal-aware`, `--goal-use-ollama`, and `--goal-fallback-deterministic`.
+- Added explicit `goal_rerank` and `goal_roughcut` action types to plan artifacts, validation, previews, review, diff, and execution.
+- Added goal-aware post-processing execution after `run_pipeline` when those actions are present in an approved plan.
+- Added `clip-cards --prefer-goal-roughcut` so editor-facing cards can use `goal_roughcut.json` as the base source.
+- Added `selected-clips --prefer-goal-roughcut` so export handoff can use the goal-aware cut path explicitly.
+- Added `goal-handoff <run_id>` to generate clip cards, selected clips, FFmpeg script, and export manifest from `goal_roughcut.json`.
+- Extended inspect output to show selected clip source alongside goal-aware counts.
+- Extended report output to show a Goal-Aware Editing section and goal-aware artifact sources.
+- Added tests for goal-aware plan creation, review output, goal-aware execution, goal-source clip cards/selected clips, goal-handoff, inspect source output, and report source output.
+- Added a smoke script for agent goal-aware dry-run flow.
+
+Files added/modified:
+- Added `scripts/smoke-agent-goal-aware.sh`.
+- Modified `internal/agent/agent.go`.
+- Modified `internal/agent/agent_test.go`.
+- Modified `internal/commands/agent.go`.
+- Modified `internal/commands/agent_test.go`.
+- Modified `internal/commands/plan_review.go`.
+- Modified `internal/commands/revision.go`.
+- Modified `internal/commands/editor_artifacts.go`.
+- Modified `internal/commands/editor_artifacts_test.go`.
+- Modified `internal/commands/export_handoff.go`.
+- Modified `internal/commands/export_handoff_test.go`.
+- Modified `internal/commands/runs.go`.
+- Modified `internal/runinfo/runinfo.go`.
+- Modified `internal/report/report.go`.
+- Modified `internal/report/report_test.go`.
+- Modified `internal/cli/root.go`.
+- Modified `docs/agent.md`.
+- Modified `docs/artifacts/goal-rerank.md`.
+- Modified `docs/artifacts/goal-roughcut.md`.
+- Modified `docs/artifacts/clip-cards.md`.
+- Modified `docs/artifacts/selected-clips.md`.
+- Modified `README.md`.
+- Modified `PROGRESS.md`.
+
+New commands:
+```sh
+./byom-video goal-handoff <run_id>
+```
+
+New flags:
+```sh
+./byom-video plan <path> --goal-aware
+./byom-video plan <path> --goal-use-ollama
+./byom-video plan <path> --goal-fallback-deterministic
+
+./byom-video clip-cards <run_id> --prefer-goal-roughcut
+./byom-video selected-clips <run_id> --prefer-goal-roughcut
+
+./byom-video goal-handoff <run_id> --overwrite
+./byom-video goal-handoff <run_id> --json
+```
+
+Agent goal-aware behavior:
+- `plan --goal-aware` adds explicit `goal_rerank` and `goal_roughcut` actions after the normal file pipeline action.
+- Goal-aware planning currently supports file-target plans only.
+- Command previews show:
+  - `./byom-video goal-rerank <run_id> --goal "..."`
+  - `./byom-video goal-roughcut <run_id>`
+- `--goal-use-ollama` and `--goal-fallback-deterministic` are preserved in the action options and previews.
+- Plan validation accepts `goal_rerank` and `goal_roughcut`.
+- Review and inspect surfaces now show goal-aware execution intent, Ollama usage, fallback allowance, and command previews.
+
+Execution behavior:
+- Plan execution still runs the pipeline action first.
+- After a run id is produced, `goal_rerank` executes against that run.
+- `goal_roughcut` then executes against the same run and writes additive goal-aware artifacts.
+- Ollama is only called if the saved action options explicitly request it.
+- If goal reranking fails without fallback, plan execution fails cleanly. If fallback is enabled, reranking stays explicit and local.
+
+Clip cards/selected clips goal source behavior:
+- `clip-cards --prefer-goal-roughcut` fails cleanly if `goal_roughcut.json` is missing.
+- When present, it uses goal-aware clips as the base source and records `goal_roughcut.json` in the artifact source.
+- `selected-clips --prefer-goal-roughcut` does the same for export-facing clip selection and ordering.
+- Default clip-card and selected-clip behavior is unchanged when the flag is not used.
+
+Goal handoff behavior:
+- `goal-handoff <run_id>` is an explicit helper that runs:
+  - `clip-cards --prefer-goal-roughcut`
+  - `selected-clips --prefer-goal-roughcut`
+  - `ffmpeg-script --overwrite`
+  - `export-manifest --overwrite`
+- It does not export media.
+- It keeps the goal-aware path explicit and local.
+
+Report/inspect integration:
+- `inspect <run_id>` now shows selected clip source when `selected_clips.json` exists.
+- If goal-aware artifacts exist, report generation now adds a Goal-Aware Editing section.
+- `clip_cards.json` and `selected_clips.json` report sections now show when they were sourced from `goal_roughcut.json`.
+
+Commands run:
+```sh
+gofmt -w internal/agent/agent.go internal/agent/agent_test.go internal/commands/agent.go internal/commands/agent_test.go internal/commands/plan_review.go internal/commands/revision.go internal/commands/runs.go internal/runinfo/runinfo.go internal/report/report.go internal/report/report_test.go internal/commands/editor_artifacts.go internal/commands/editor_artifacts_test.go internal/commands/export_handoff.go internal/commands/export_handoff_test.go internal/cli/root.go
+chmod +x scripts/smoke-agent-goal-aware.sh
+go test ./...
+go build ./cmd/byom-video
+python3 -m compileall -q workers/byom_video_workers
+scripts/smoke-agent-goal-aware.sh
+```
+
+Test results:
+- `go test ./...` passed.
+- `go build ./cmd/byom-video` passed.
+- `python3 -m compileall -q workers/byom_video_workers` passed.
+- `scripts/smoke-agent-goal-aware.sh` passed.
+- Smoke created a dry-run goal-aware plan, showed `goal_rerank` and `goal_roughcut` action previews, and printed the explicit goal-handoff follow-up path.
+
+How to run smoke agent-goal-aware test:
+```sh
+scripts/smoke-agent-goal-aware.sh
+```
+
+Known limitations:
+- Goal-aware planning is still explicit and file-plan-only in this milestone.
+- Default clip-card and selected-clip generation still use the existing roughcut/enhanced roughcut path unless `--prefer-goal-roughcut` is passed.
+- `goal-handoff` assumes `goal_roughcut.json` already exists.
+- Ollama goal reranking remains local-only and explicit.
+- No cloud providers, Docker, vector DB, web server, or NLE integrations were added.
+
+Next recommended milestone:
+- Add minimal plan revision support for toggling goal-aware plan options after plan creation.
+- Add goal-aware selected-clip ordering controls and subset selection.
+- Add review/export bundle artifacts that summarize the goal-aware cut path for editors.
+- Consider optional agent execution helpers that surface the resulting run id and goal-handoff path together.
+
+Errors or assumptions:
+- Assumed goal-aware planning should stay limited to file plans for now.
+- Assumed `goal-handoff` should always regenerate the FFmpeg script with `stream-copy` mode unless the user separately regenerates it.
+- Assumed goal-aware clip-card and selected-clip source switching should remain explicit flags rather than automatic behavior.
+<!-- HANDOFF 038 END -->
+
+## Prompt 039 - Agent Result Summary + Goal Review Bundle
+
+<!-- PROMPT 039 START -->
+Goal:
+- Add agent execution result surfacing and goal-aware review bundles so users can clearly see what an approved/executed plan produced and what to do next.
+- Improve `execute-plan` terminal summaries.
+- Add `agent-result <plan_id>`.
+- Add `goal-review-bundle <run_id>`.
+- Keep local-first and artifact-first.
+- Do not add new providers, cloud calls, web server, Docker, vector DB, or NLE integrations.
+<!-- PROMPT 039 END -->
+
+## Handoff 039
+
+<!-- HANDOFF 039 START -->
+What changed:
+- Improved successful `execute-plan` output with plan id, final status, run id, run directory, report path, goal-aware artifact paths, and suggested next commands.
+- Improved failed `execute-plan` output with failed action id/type, error, and follow-up `inspect-plan` and `review-plan` suggestions.
+- Added `agent-result <plan_id>` to summarize what a plan produced after planning or execution.
+- Added `agent_result.md` artifact writing with `agent-result --write-artifact`.
+- Added `goal-review-bundle <run_id>` to produce a readable goal-aware review bundle from rerank, roughcut, clip-card, selected-clip, export-manifest, and report artifacts when present.
+- Recorded `goal_review_bundle.md` in the run manifest.
+- Extended `plan-artifacts` and `inspect-plan` to show `agent_result.md` and resulting run ids / batch ids.
+- Extended `inspect <run_id>` to show `goal_review_bundle.md` and associated `agent_result.md` when a plan/result mapping is available.
+- Extended run report generation to surface `goal_review_bundle.md` inside the Goal-Aware Editing section.
+- Extended run validation to treat `goal_review_bundle.md` as a known local artifact.
+- Added smoke script for `agent-result` and goal-review-bundle flow.
+- Added tests for execute-plan summaries, `agent-result`, `agent_result.md`, plan-artifact visibility, goal-review-bundle generation, inspect visibility, and validation behavior.
+
+Files added/modified:
+- Added `internal/commands/agent_result.go`.
+- Added `scripts/smoke-agent-result.sh`.
+- Modified `internal/commands/agent.go`.
+- Modified `internal/commands/agent_test.go`.
+- Modified `internal/commands/goal_aware_test.go`.
+- Modified `internal/cli/root.go`.
+- Modified `internal/runinfo/runinfo.go`.
+- Modified `internal/commands/runs.go`.
+- Modified `internal/runvalidate/runvalidate.go`.
+- Modified `internal/report/report.go`.
+- Modified `docs/agent.md`.
+- Modified `docs/artifacts/goal-rerank.md`.
+- Modified `docs/artifacts/goal-roughcut.md`.
+- Modified `README.md`.
+- Modified `PROGRESS.md`.
+
+New commands:
+```sh
+./byom-video agent-result <plan_id>
+./byom-video goal-review-bundle <run_id>
+```
+
+New flags:
+```sh
+./byom-video agent-result <plan_id> --json
+./byom-video agent-result <plan_id> --write-artifact
+
+./byom-video goal-review-bundle <run_id> --json
+./byom-video goal-review-bundle <run_id> --overwrite
+```
+
+Execute-plan summary behavior:
+- On success, `execute-plan` now prints:
+  - plan id
+  - final status
+  - resulting run id
+  - run directory
+  - report path when present
+  - `goal_rerank.json` and `goal_roughcut.json` paths when present
+  - suggested next commands such as `inspect`, `open-report`, `goal-handoff`, `export`, and `validate`
+- On failure, `execute-plan` now prints:
+  - failed action id/type
+  - error
+  - `inspect-plan` and `review-plan` suggestions
+
+Agent-result behavior:
+- `agent-result <plan_id>` reads `agent_plan.json` and action execution state.
+- It reports:
+  - plan id
+  - goal
+  - status
+  - approval status
+  - execution status
+  - resulting run ids
+  - resulting batch ids
+  - important artifact paths
+  - suggested next commands
+- `agent-result --write-artifact` writes:
+```text
+.byom-video/plans/<plan_id>/agent_result.md
+```
+- Writing the artifact records `AGENT_RESULT_ARTIFACT_WRITTEN` in the plan action log.
+
+Goal-review-bundle behavior:
+- `goal-review-bundle <run_id>` always writes:
+```text
+.byom-video/runs/<run_id>/goal_review_bundle.md
+```
+- It requires `goal_rerank.json` and `goal_roughcut.json`.
+- If present, it also uses:
+  - `clip_cards.json`
+  - `selected_clips.json`
+  - `export_manifest.json`
+  - `report.html`
+- The bundle includes:
+  - run id
+  - goal text
+  - rerank mode
+  - goal constraints
+  - selected goal-aware clips
+  - scores and reasons
+  - clip card titles/captions when available
+  - selected output filenames when available
+  - export manifest summary when available
+  - next commands
+- It records `goal_review_bundle.md` in the run manifest and writes:
+  - `GOAL_REVIEW_BUNDLE_STARTED`
+  - `GOAL_REVIEW_BUNDLE_COMPLETED`
+  - `GOAL_REVIEW_BUNDLE_FAILED`
+
+Report/inspect integration:
+- `inspect <run_id>` now shows:
+  - `goal_review_bundle.md` path when present
+  - associated `agent_result.md` path when a plan action references the run id and the artifact exists
+- `report.html` now shows the `goal_review_bundle.md` path inside the Goal-Aware Editing section when present
+- `plan-artifacts` and `inspect-plan` now show:
+  - `agent_result.md`
+  - resulting run ids
+  - resulting batch ids
+
+Commands run:
+```sh
+gofmt -w internal/commands/agent.go internal/commands/agent_result.go internal/runinfo/runinfo.go internal/commands/runs.go internal/runvalidate/runvalidate.go internal/report/report.go internal/cli/root.go internal/commands/agent_test.go internal/commands/goal_aware_test.go
+chmod +x scripts/smoke-agent-result.sh
+go test ./...
+go build ./cmd/byom-video
+python3 -m compileall -q workers/byom_video_workers
+scripts/smoke-agent-result.sh
+```
+
+Test results:
+- `go test ./...` passed.
+- `go build ./cmd/byom-video` passed.
+- `python3 -m compileall -q workers/byom_video_workers` passed.
+- `scripts/smoke-agent-result.sh` passed.
+- Smoke wrote `agent_result.md` for the latest available plan and printed the clean follow-up instruction when no executed goal-aware run was available.
+
+How to run smoke agent-result test:
+```sh
+scripts/smoke-agent-result.sh
+```
+
+Known limitations:
+- `agent-result` reflects the execution state recorded in `agent_plan.json`; it does not reconstruct missing run ids if actions were edited manually.
+- `goal-review-bundle` requires the goal-aware artifacts to exist already; it does not generate them.
+- Run-to-plan mapping for `agent_result.md` in `inspect <run_id>` is based on matching run ids in plan actions.
+- No new providers, cloud calls, web server, Docker, vector DB, or NLE integrations were added.
+
+Next recommended milestone:
+- Add optional automatic `agent-result --write-artifact` after successful `execute-plan`.
+- Add richer per-run and per-plan next-step suggestions for batch/watch execution paths.
+- Add a compact shareable review bundle index for goal-aware export handoff.
+- Add optional result summaries that group normal roughcut and goal-aware roughcut side by side.
+
+Errors or assumptions:
+- Chose to make `goal-review-bundle` always write its markdown artifact because that is the command’s purpose.
+- Assumed plan-to-run association in `inspect <run_id>` can stay best-effort via action `run_id` matching.
+- Kept execution semantics unchanged; only result surfacing and artifact writing were added.
+<!-- HANDOFF 039 END -->
+
+## Prompt 040 - Creative Capability Registry
+
+<!-- PROMPT 040 START -->
+Goal:
+- Add a dynamic Creative Capability Registry and provider-agnostic tool backend configuration skeleton.
+- Add `tools` config parsing, inspection, validation, requirements detection, and creative planning artifacts.
+- Keep local-first and artifact-first.
+- Do not call new providers, add cloud execution, add web server, Docker, vector DB, or NLE integrations.
+<!-- PROMPT 040 END -->
+
+## Handoff 040
+
+<!-- HANDOFF 040 START -->
+What changed:
+- Added a new provider-agnostic `tools` config section with dynamic backend and route parsing.
+- Added structural tool backend/auth config support under `internal/config`.
+- Added `byom-video tools` for human-readable and JSON inspection of creative backends and routes.
+- Added `byom-video tools validate` with structural checks, strict mode, and optional env-presence checks.
+- Added `byom-video tools requirements --goal "<text>"` for deterministic capability detection from creative goals.
+- Added `byom-video creative-plan <input-file> --goal "<text>"` to write deterministic creative planning artifacts without provider calls.
+- Added `byom-video creative-plans`, `inspect-creative-plan`, and `review-creative-plan`.
+- Added illustrative creative config examples for local-only, placeholder cloud-style, and custom HTTP backends.
+- Updated config, security, models, and README docs to document the Creative Capability Registry.
+- Added a smoke script for tools inspection, validation, requirements detection, creative plan creation, listing, inspection, and review.
+
+Files added/modified:
+- Added `internal/commands/creative_tools.go`.
+- Added `internal/commands/creative_tools_test.go`.
+- Modified `internal/config/config.go`.
+- Modified `internal/config/config_test.go`.
+- Modified `internal/commands/config.go`.
+- Modified `internal/cli/root.go`.
+- Added `docs/creative-tools.md`.
+- Added `docs/creative-plans.md`.
+- Added `examples/configs/creative-local-only.yaml`.
+- Added `examples/configs/creative-openai-elevenlabs-placeholder.yaml`.
+- Added `examples/configs/creative-custom-http.yaml`.
+- Added `scripts/smoke-creative-tools.sh`.
+- Modified `docs/config.md`.
+- Modified `docs/security.md`.
+- Modified `docs/models.md`.
+- Modified `README.md`.
+- Modified `PROGRESS.md`.
+
+New commands:
+```sh
+./byom-video tools
+./byom-video tools validate
+./byom-video tools requirements --goal "<text>"
+./byom-video creative-plan <input-file> --goal "<text>"
+./byom-video creative-plans
+./byom-video inspect-creative-plan <creative_plan_id>
+./byom-video review-creative-plan <creative_plan_id>
+```
+
+New config fields:
+```yaml
+tools:
+  enabled: false
+
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: ollama
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: none
+      options:
+        temperature: 0.2
+
+    voice_backend:
+      kind: voice_generation
+      provider: elevenlabs-compatible
+      model: voice-model-name
+      endpoint: https://api.example.com
+      auth:
+        type: header_env
+        header: xi-api-key
+        env: ELEVENLABS_API_KEY
+
+  routes:
+    creative.script: local_writer
+    creative.voiceover: voice_backend
+```
+
+Tools config behavior:
+- Backend logical names are fully user-defined.
+- Provider strings are fully user-defined.
+- Route keys are fully user-defined.
+- Known capability kinds are documented, but unknown kinds are warnings by default.
+- Auth config supports:
+  - `none`
+  - `bearer_env`
+  - `header_env`
+  - `query_env`
+  - `basic_env`
+- Commands only print env var names, never values.
+- No provider calls are made by config show, tools inspection, tools validation, requirements detection, or creative planning.
+
+Tools validation behavior:
+- Structural validation only.
+- Checks:
+  - backend kind present
+  - provider present
+  - endpoint warnings for non-local backends when missing
+  - model warnings for generation-like kinds when missing
+  - auth type validity
+  - required auth env/header fields
+  - route target existence
+- Unknown capability kinds are warnings unless `--strict`, where they become errors.
+- `--check-env` checks env presence only and never prints values.
+- Missing env vars become warnings by default and errors in `--strict`.
+
+Requirements detection behavior:
+- Deterministically infers capabilities from goal text.
+- Supported examples include:
+  - narration / voiceover
+  - cinematic short
+  - AI b-roll
+  - captions
+  - object removal
+  - translation / Spanish
+- Reports capability status as:
+  - `satisfied`
+  - `partial`
+  - `missing`
+- Shows matching routes and backends when configured.
+- Suggests route names such as `creative.video_broll` when capabilities are missing.
+
+Creative plan behavior:
+- `creative-plan` writes:
+```text
+.byom-video/creative_plans/<creative_plan_id>/creative_plan.json
+```
+- Planning is deterministic and artifact-only.
+- It does not execute tools or call providers.
+- Missing capabilities produce warnings and do not block planning unless `--strict` is used.
+- `review-creative-plan --write-artifact` writes:
+```text
+.byom-video/creative_plans/<creative_plan_id>/creative_plan_review.md
+```
+
+Commands run:
+```sh
+gofmt -w internal/config/config.go internal/config/config_test.go internal/commands/config.go internal/commands/creative_tools.go internal/commands/creative_tools_test.go internal/cli/root.go
+chmod +x scripts/smoke-creative-tools.sh
+GOCACHE=/Users/mireliftikharahmed/Documents/BYOMVIDEO/.cache/go-build go test ./...
+GOCACHE=/Users/mireliftikharahmed/Documents/BYOMVIDEO/.cache/go-build go build -o byom-video ./cmd/byom-video
+GOCACHE=/Users/mireliftikharahmed/Documents/BYOMVIDEO/.cache/go-build go build ./cmd/byom-video
+python3 -m compileall -q workers/byom_video_workers
+scripts/smoke-creative-tools.sh
+```
+
+Test results:
+- `go test ./...` passed.
+- `go build -o byom-video ./cmd/byom-video` passed.
+- `go build ./cmd/byom-video` passed.
+- `python3 -m compileall -q workers/byom_video_workers` passed.
+- `scripts/smoke-creative-tools.sh` passed.
+- Smoke showed disabled tools config, successful structural validation, deterministic capability detection, creative plan creation, creative plan listing, inspection, and markdown review artifact writing.
+
+How to run smoke creative-tools test:
+```sh
+scripts/smoke-creative-tools.sh
+```
+
+Known limitations:
+- The Creative Capability Registry is config/contracts/planning only in this milestone.
+- It does not execute creative tools.
+- Cloud-oriented backend examples are illustrative placeholders only.
+- Only existing implemented execution providers should be treated as executable.
+- Capability detection is deterministic keyword matching, not semantic reasoning.
+- No new providers, cloud calls, web server, Docker, vector DB, or NLE integrations were added.
+
+Next recommended milestone:
+- Add creative plan approval and execution skeletons that consume the registry without hardcoding providers.
+- Add capability-to-artifact review bundles for script, voiceover, and visual generation planning.
+- Add backend dry-run request previews for creative tools similar to model request dry-runs.
+- Add explicit local-command backend planning contracts.
+
+Errors or assumptions:
+- Assumed `tools` should remain separate from `models` because capability routing and model routing solve different problems.
+- Assumed planning should still succeed when capabilities are missing unless `--strict` is used.
+- Assumed cloud-style example configs should stay clearly documented as illustrative and non-executable in the current implementation.
+<!-- HANDOFF 040 END -->
+
+<!-- HANDOFF 041 START -->
+## Prompt 041 — Creative Plan Approval + Dry Run Preview
+
+### START
+
+**Goal:** Add an approval gate and dry-run execution skeleton to the creative capability registry. No provider calls are made.
+
+**Implemented:**
+- `approve-creative-plan <plan_id>` — patches `approval_status=approved`, `approved_at`, `approval_mode=manual` onto `creative_plan.json`; writes CREATIVE_PLAN_APPROVED event
+- `creative-plan-events <plan_id> [--json]` — reads and prints `events.jsonl` for a creative plan
+- `creative-preview <plan_id> [--json] [--strict] [--overwrite] [--check-env]` — builds provider-agnostic dry-run request stubs per step; writes `creative_requests.dryrun.json`; events CREATIVE_PREVIEW_STARTED/COMPLETED/FAILED
+- `execute-creative-plan <plan_id> [--yes] [--dry-run] [--strict] [--check-env] [--json]` — requires approval (or --yes); runs preview internally; patches `execution_status=dry_run_completed` and `request_preview_artifact`; events CREATIVE_EXECUTION_STARTED/STEP_PREVIEWED/STEP_SKIPPED/COMPLETED/FAILED
+- `creative-result <plan_id> [--json] [--write-artifact]` — summarizes approval/execution state; writes `creative_result.md`
+- `validate-creative-plan <plan_id> [--json]` — validates `creative_plan.json`, `creative_requests.dryrun.json` (if present), `events.jsonl` (if present)
+- Updated `inspect-creative-plan` — now shows approval_status, execution_status, preview artifact path, events path, step statuses
+- Updated `review-creative-plan` — now shows approval_status, execution_status, preview artifact path, next suggested commands; --write-artifact includes Next Steps section
+
+**New files:**
+- `internal/commands/creative_plan_approval.go` — all new command implementations
+- `internal/commands/creative_plan_approval_test.go` — 15 tests (all pass)
+- `scripts/smoke-creative-plan-approval.sh` — end-to-end smoke test
+
+**New artifacts per plan:**
+```text
+.byom-video/creative_plans/<plan_id>/creative_plan.json        (patched with approval/execution fields)
+.byom-video/creative_plans/<plan_id>/creative_requests.dryrun.json
+.byom-video/creative_plans/<plan_id>/creative_result.md
+.byom-video/creative_plans/<plan_id>/events.jsonl
+```
+
+**Schema: creative_requests.dryrun.v1**
+Each request item includes: step_id, step_type, capability, route, backend, provider, model, endpoint, auth (env var name only, never value), status (previewed|missing_backend), request_preview (instruction, input_summary, output_contract).
+
+**Test results:**
+- `go test ./...` — all packages pass
+- `scripts/smoke-creative-plan-approval.sh` — passes end-to-end
+
+### HANDOFF
+
+Commands tested in smoke:
+1. `creative-plan` — creates plan
+2. `creative-plans` — lists plans
+3. `inspect-creative-plan` — shows approval_status=pending, execution_status=not_started, step statuses
+4. `review-creative-plan --write-artifact` — shows next commands, writes MD artifact
+5. `approve-creative-plan` — approval_status=approved, approval_mode=manual
+6. `creative-plan-events` — CREATIVE_PLAN_APPROVED event visible
+7. `creative-preview` — writes creative_requests.dryrun.json; --overwrite works
+8. `execute-creative-plan` — writes execution_status=dry_run_completed
+9. `creative-result --write-artifact` — shows approved/dry_run_completed; writes creative_result.md
+10. `validate-creative-plan` — status: ok
+
+Known limitations:
+- No provider calls are made. This is dry-run planning only.
+- `execute-creative-plan` always produces execution_status=dry_run_completed; live provider dispatch is not implemented.
+- Request preview payloads are template-generated from step type, not from actual content.
+- `--check-env` warns on missing env vars but does not fail unless `--strict` is also set.
+
+Next recommended milestone:
+- Add local-command backend execution (shell script dispatch) as the first non-dry-run execution path.
+- Add capability-to-artifact mapping so downstream commands can consume preview outputs.
+- Add `creative-plan-diff` for comparing two creative plans.
+<!-- HANDOFF 041 END -->
+
+<!-- PROMPT 042 START -->
+## Prompt 042 — Creative Stub Execution Artifacts
+
+Goal: Add creative stub execution so approved creative plans can produce structured local placeholder artifacts without calling providers or executing shell commands.
+
+Scope: Local-first, artifact-first. No provider calls. No shell execution. No API keys read. Stub outputs only.
+
+Parts implemented:
+- Part A: creative-execute-stub command
+- Part B: 8 output artifact schemas (script, voiceover, visual assets, captions, audio, visual transform, translation, composition)
+- Part C: outputs/creative_outputs.json index (creative_outputs.v1)
+- Part D: review-creative-outputs command
+- Part E: extend validate-creative-plan to validate outputs
+- Part F: update inspect-creative-plan, creative-result, review-creative-plan with output artifact summary
+- Part G: update docs/creative-plans.md, README.md; create docs/artifacts/creative-outputs.md
+- Part H: 13 tests (all pass)
+- Part I: scripts/smoke-creative-stub-execution.sh (passes)
+<!-- PROMPT 042 END -->
+
+<!-- HANDOFF 042 START -->
+## Handoff 042
+
+### What changed
+
+New file: `internal/commands/creative_stub_execution.go`
+- All new types: CreativeOutputsIndex, CreativeOutputArtifact, CreativeScriptOutput, VoiceoverPlanOutput, VisualAssetPromptsOutput, VisualPromptItem, CaptionPlanOutput, AudioAssetPlanOutput, VisualTransformPlanOutput, TranslationPlanOutput, CompositionPlanOutput, CompositionPlanInputs
+- New options: CreativeExecuteStubOptions, ReviewCreativeOutputsOptions
+- Functions: CreativeExecuteStub, ReviewCreativeOutputs, writeStubArtifact, stubArtifactName, stubArtifactType, expectedArtifactSchemaVersion, visualKindForGoal
+
+Modified: `internal/commands/creative_plan_approval.go`
+- ValidateCreativePlan: added validation of outputs/creative_outputs.json (schema, artifacts, path existence, per-artifact schema_version)
+- CreativeResult: reads creative_outputs.json if present, shows output artifact count + types, adds creative-execute-stub / review-creative-outputs / validate-creative-plan to next_commands
+
+Modified: `internal/commands/creative_tools.go`
+- InspectCreativePlan: reads outputs index if present, shows outputs dir, outputs index path, creative_outputs_review.md path, output artifact count, reads step statuses from map (post-stub patch)
+- ReviewCreativePlan: reads outputs index if present, shows output artifact count + list, adds creative-execute-stub / review-creative-outputs to next_commands, write-artifact includes Stub Outputs section
+
+Modified: `internal/cli/root.go`
+- Added usage lines for creative-execute-stub and review-creative-outputs
+- Added case statements for both new commands
+- Added parseCreativeExecuteStubArgs (supports --yes --overwrite --json --dry-run --step-type <type>)
+- Added parseReviewCreativeOutputsArgs
+
+New: `internal/commands/creative_stub_execution_test.go` — 13 tests (all pass)
+New: `scripts/smoke-creative-stub-execution.sh` — end-to-end smoke (11 steps, passes)
+New: `docs/artifacts/creative-outputs.md`
+Updated: `docs/creative-plans.md`, `README.md`
+
+### New commands
+
+```sh
+byom-video creative-execute-stub <id> [--yes] [--overwrite] [--json] [--step-type <type>] [--dry-run]
+byom-video review-creative-outputs <id> [--json] [--write-artifact]
+```
+
+### Stub execution behavior
+
+- Reads creative_plan.json, validates schema
+- Requires approval_status=approved unless --yes
+- --yes auto-approves with approval_mode=yes_flag
+- --overwrite required if outputs/ already exists
+- --step-type filters to one step type; all other steps marked skipped
+- --dry-run prints planned writes, writes nothing
+- Creates outputs/ dir, writes per-step artifact file(s)
+- Writes outputs/creative_outputs.json index
+- Patches creative_plan.json: execution_status=stub_completed, per-step status=stub_completed|skipped|failed, output_artifacts=[list]
+- Events: CREATIVE_STUB_EXECUTION_STARTED, CREATIVE_STUB_STEP_COMPLETED, CREATIVE_STUB_STEP_SKIPPED, CREATIVE_STUB_EXECUTION_COMPLETED, CREATIVE_STUB_EXECUTION_FAILED
+
+### Output artifact behavior
+
+| step_type | file(s) | schema_version |
+|---|---|---|
+| generate_script | script_draft.json + script_draft.txt | creative_script.v1 |
+| generate_voiceover | voiceover_plan.json | voiceover_plan.v1 |
+| generate_visual_asset | visual_asset_prompts.json | visual_asset_prompts.v1 |
+| generate_captions_or_caption_variants | caption_plan.json | caption_plan.v1 |
+| generate_audio_asset | audio_asset_plan.json | audio_asset_plan.v1 |
+| visual_transform | visual_transform_plan.json | visual_transform_plan.v1 |
+| translate_text | translation_plan.json | translation_plan.v1 |
+| render_draft | composition_plan.json | composition_plan.v1 |
+| unknown | (none, step marked skipped) | — |
+
+### Commands run in smoke
+
+1. creative-plan — creates plan with 5 steps
+2. approve-creative-plan — marks approved
+3. creative-execute-stub --dry-run — shows planned writes, writes nothing
+4. creative-execute-stub — 5 artifacts created, execution_status=stub_completed
+5. creative-execute-stub --overwrite — idempotent
+6. review-creative-outputs --write-artifact — lists 5 artifacts, writes creative_outputs_review.md
+7. creative-result --write-artifact — shows stub_completed, 5 output artifacts, next commands
+8. validate-creative-plan — status: ok
+9. inspect-creative-plan — shows stub_completed, 5 step statuses, outputs dir, outputs index
+10. review-creative-plan --write-artifact — shows output artifact summary, next commands
+11. creative-plan-events — APPROVED + STUB_EXECUTION events visible
+
+### Test results
+
+go test ./... — all 28 packages pass
+scripts/smoke-creative-stub-execution.sh — passes
+
+### How to run smoke
+
+```sh
+bash scripts/smoke-creative-stub-execution.sh
+```
+
+### Known limitations
+
+- All stub outputs are template-generated; content is not derived from the actual video or transcript.
+- visual_kind in visual_asset_prompts.json is derived from goal keyword matching, not semantic reasoning.
+- Only one prompt per generate_visual_asset step. Multi-shot visual prompts not yet supported.
+- No provider calls — stub execution is a planning and artifact skeleton only.
+- execute-creative-plan (Prompt 041) still produces execution_status=dry_run_completed. creative-execute-stub is the path to stub_completed.
+
+### Next recommended milestone
+
+- Add local-command backend execution (dispatch configured shell scripts) as the first real execution path.
+- Add capability-to-artifact mapping so downstream commands (export, clip-cards) can consume stub outputs.
+- Add creative-plan-diff for comparing two creative plans.
+- Add step dependency ordering to creative_plan.json so render_draft can depend on generate_script.
+<!-- HANDOFF 042 END -->
+
+## Prompt 043 - Creative Composition Timeline + Render Plan
+
+<!-- HANDOFF 043 START -->
+
+### What was added
+
+**New commands:**
+
+- `creative-timeline <id> [--run-id <run_id>] [--overwrite] [--json] [--prefer-goal]`
+  - Assembles four tracks from stub outputs + optional run clips into `outputs/creative_timeline.json`
+  - Tracks: `track_video_main` (video), `track_voiceover` (audio), `track_captions` (text), `track_visual_overlays` (visual)
+  - Clip source priority (with `--run-id`): `selected_clips.json`; with `--prefer-goal`: `goal_roughcut.json → enhanced_roughcut.json → roughcut.json → selected_clips.json`
+  - Total duration computed from clip durations; empty if no run clips provided
+  - Voiceover: single placeholder spanning full duration, notes reference voiceover_plan.json if present
+  - Visual overlays: one placeholder per visual prompt from `visual_asset_prompts.json`, or one global placeholder
+  - Updates `creative_outputs.json` index; fires events CREATIVE_TIMELINE_STARTED/COMPLETED/FAILED
+
+- `creative-render-plan <id> [--overwrite] [--json]`
+  - Converts timeline items to render steps; requires `creative_timeline.json`
+  - Operations: `cut_source_clip`, `attach_voiceover_placeholder`, `add_caption_placeholder`, `add_visual_overlay_placeholder`
+  - Writes `outputs/creative_render_plan.json` (schema: `creative_render_plan.v1`)
+  - `planned_output.planned_file = "outputs/draft.mp4"` in stub mode
+  - Updates `creative_outputs.json` index; fires events CREATIVE_RENDER_PLAN_STARTED/COMPLETED/FAILED
+
+- `review-creative-timeline <id> [--json] [--write-artifact]`
+  - Prints summary of all tracks and render steps
+  - `--write-artifact` writes `outputs/creative_timeline_review.md`, updates index
+
+**Extended commands:**
+
+- `validate-creative-plan` — validates `creative_timeline.json` (schema, tracks, duration) and `creative_render_plan.json` (schema, planned_output, steps)
+- `inspect-creative-plan` — shows timeline path, track count, duration, render plan path, step count, planned output
+- `creative-result` — adds `creative-timeline`/`creative-render-plan`/`review-creative-timeline` to next_commands when not yet run
+- `review-creative-outputs` — shows timeline and render plan paths if present
+
+**New files:**
+
+- `internal/commands/creative_timeline.go` — all types, helpers, and command implementations
+- `internal/commands/creative_timeline_test.go` — 16 tests
+- `scripts/smoke-creative-timeline.sh` — 13-step smoke test
+- `docs/artifacts/creative-timeline.md`
+- `docs/artifacts/creative-render-plan.md`
+
+**Updated files:**
+
+- `internal/commands/creative_plan_approval.go` — extended validate, creative-result
+- `internal/commands/creative_tools.go` — extended inspect
+- `internal/commands/creative_stub_execution.go` — extended review-creative-outputs, expectedArtifactSchemaVersion
+- `internal/cli/root.go` — usage lines, switch cases, parse functions for 3 new commands
+- `docs/creative-plans.md` — new workflow steps, commands, artifacts, Timeline and Render Plan section
+- `README.md` — new table row, new command block entries
+
+### Key helpers added
+
+- `readClipsFromArtifact(path)` — reads clips from any run artifact using `clips`/`items`/`segments` key
+- `updateCreativeOutputsIndex(planID, type, path, stepID)` — adds/updates entry in creative_outputs.json, creates index if absent
+- `timelineTruncate(s, n)` — local truncate helper (avoids collision with `truncate` in runs.go)
+- `jsonFloat(m, key)` — type-safe float extraction from map[string]any
+
+### Type naming note
+
+`CreativeTimelineArtifact` and `CreativeRenderPlanArtifact` are the struct types (function names `CreativeTimeline` / `CreativeRenderPlan` would conflict).
+
+### Test results
+
+go test ./... — all 28 packages pass (16 new tests)
+scripts/smoke-creative-timeline.sh — passes
+
+### How to run smoke
+
+```sh
+bash scripts/smoke-creative-timeline.sh
+```
+
+### Known limitations
+
+- Timeline clips only come from run artifact JSON files; no ffprobe or media inspection in this layer.
+- Visual overlay placement is proportional (equal segments) when multiple prompts exist, not scene-aware.
+- Timeline duration is 0 when no run clips are provided (stub mode with no `--run-id`).
+- No audio waveform analysis; voiceover is a single placeholder spanning the full timeline.
+- No rendering — creative_render_plan.json is a planning artifact only.
+
+### Next recommended milestone
+
+- Add `creative-assemble` that applies ffmpeg operations from the render plan to produce an actual draft video.
+- Add `--run-id` auto-detection from creative_plan.json when a run was used during planning.
+- Add step dependency ordering so `render_draft` depends on `generate_script` in the render plan.
+- Add capability-to-artifact mapping so downstream export commands can consume timeline outputs.
+<!-- HANDOFF 043 END -->
+
+## Prompt 044 - Creative Assemble v1
+
+<!-- PROMPT 044 START -->
+Add Creative Assemble v1: a safe FFmpeg-based render command that turns creative_timeline.json / creative_render_plan.json into a local draft video when source clips are available. Add creative-assemble (reencode/stream-copy, dry-run, max-clips), validate-creative-assemble, review-creative-assemble, result artifact (creative_assemble_result.v1), creative_outputs.json index update, creative_plan.json execution_status=assembled patching, validation/review integration, ffmpeg executor abstraction for testable code, 20 unit tests with fake runner, smoke script, docs.
+<!-- PROMPT 044 END -->
+
+<!-- HANDOFF 044 START -->
+
+### What changed
+
+**New commands:**
+
+- `creative-assemble <id> [--overwrite] [--json] [--mode reencode|stream-copy] [--keep-work] [--dry-run] [--max-clips <n>]`
+  - Reads `creative_timeline.json` + `creative_render_plan.json`
+  - Finds `source_clip` items in `track_video_main` with `source_end > source_start`
+  - Cuts clips: reencode (`-c:v libx264 -c:a aac`) or stream-copy (`-c copy`)
+  - Writes `outputs/render_work/clip_NNNN.mp4` + `concat_list.txt`
+  - Assembles via FFmpeg concat demuxer → `outputs/draft.mp4`
+  - Single clip: remuxed directly via ffmpeg (not renamed)
+  - Writes `outputs/creative_assemble_result.json` (`creative_assemble_result.v1`)
+  - Updates `creative_outputs.json` (adds `draft_video`, `creative_assemble_result` entries)
+  - Patches `creative_plan.json.execution_status = "assembled"`
+  - Dry-run: prints planned commands, writes nothing
+  - Requires ffmpeg on PATH (unless `--dry-run`)
+  - Fails cleanly when no source clips: "use creative-timeline --run-id"
+  - Work files kept in `render_work/` by default (alpha transparency)
+  - Events: CREATIVE_ASSEMBLE_STARTED/CLIP_RENDERED/COMPLETED/FAILED
+
+- `validate-creative-assemble <id> [--json]`
+  - Checks schema_version, output_file non-empty, draft.mp4 exists, work clips exist, ffprobe probe if available
+
+- `review-creative-assemble <id> [--json] [--write-artifact]`
+  - Reads result, prints clip table, status, mode
+  - `--write-artifact` → `outputs/creative_assemble_review.md`, updates index
+
+**Extended commands:**
+
+- `validate-creative-plan` — validates `creative_assemble_result.json` if present (schema, draft existence, work clips)
+- `inspect-creative-plan` — shows assemble status, mode, draft output path, assemble review path
+- `creative-result` — adds `creative-assemble`/`validate-creative-assemble`/`review-creative-assemble` to next_commands; shows `draft:` field
+- `review-creative-outputs` — shows assemble status, mode, draft file when present
+- `review-creative-timeline` — shows Assemble section if result exists; adds `creative-assemble` to next commands
+
+**New files:**
+
+- `internal/commands/creative_assemble.go` — all types, runner abstraction, command implementations
+- `internal/commands/creative_assemble_test.go` — 20 tests
+- `scripts/smoke-creative-assemble.sh` — smoke test (dry-run always; real render if ffmpeg + source clips available)
+- `docs/artifacts/creative-assemble.md`
+
+**Updated files:**
+
+- `internal/commands/creative_plan_approval.go` — extended validate-creative-plan, creative-result
+- `internal/commands/creative_tools.go` — extended inspect-creative-plan
+- `internal/commands/creative_stub_execution.go` — extended review-creative-outputs
+- `internal/commands/creative_timeline.go` — extended review-creative-timeline
+- `internal/cli/root.go` — usage lines, switch cases, 3 parse functions
+- `docs/creative-plans.md` — workflow steps 8–9, commands, artifacts, Creative Assemble section
+- `README.md` — new table row, assemble commands
+
+### New files and types
+
+**`creative_assemble.go`:**
+- `CreativeAssembleResult` — schema `creative_assemble_result.v1`
+- `AssembledClip` — per-clip result with source_path, start, end, work_file, status, error
+- `ffmpegRunner` interface — `Run(args []string) ([]byte, error)`
+- `realFFmpegRunner` — calls `exec.Command(ffmpegPath, args...)`
+- `creativeAssembleWithRunner` — injectable runner for testability
+- `buildClipArgs(mode, start, end, input, output)` — builds reencode or stream-copy args slice
+
+### Safety properties
+
+- Source path comes only from `creative_timeline.json.input_path` (plan's original media)
+- FFmpeg called via `exec.Command` with arg slices, never shell strings
+- No shell metacharacters in any arg path
+- Original media never touched
+- All writes go to `outputs/` under the plan directory
+
+### FFmpeg sequence (reencode)
+
+```
+# Per clip:
+ffmpeg -y -ss 0.000000 -to 12.500000 -i /path/to/source.mov -c:v libx264 -c:a aac /plan/outputs/render_work/clip_0001.mp4
+
+# Concat list: outputs/render_work/concat_list.txt
+file '/abs/path/clip_0001.mp4'
+file '/abs/path/clip_0002.mp4'
+
+# Assemble:
+ffmpeg -y -f concat -safe 0 -i concat_list.txt -c copy outputs/draft.mp4
+
+# Single clip (remux):
+ffmpeg -y -i clip_0001.mp4 -c copy outputs/draft.mp4
+```
+
+### Test results
+
+go test ./... — all 23 packages pass (20 new tests)
+scripts/smoke-creative-assemble.sh — passes (dry-run + no-source-clips path)
+
+### How to run smoke
+
+```sh
+bash scripts/smoke-creative-assemble.sh
+```
+
+For real render test, first build a pipeline run with source clips, then:
+```sh
+byom-video creative-timeline <plan_id> --run-id <run_id>
+byom-video creative-render-plan <plan_id>
+bash scripts/smoke-creative-assemble.sh
+```
+
+### Known limitations
+
+- Only `track_video_main` source clips are assembled; voiceover/visual overlay placeholders are not rendered.
+- No audio mixing — draft.mp4 contains only the cut video audio, not the voiceover.
+- No caption burn-in.
+- `--keep-work` flag is accepted but always keeps (default); no `--clean-work` option yet.
+- Work clip existence is checked during `validate-creative-assemble` but not guaranteed to match actual ffmpeg output if the source file is very short or malformed.
+- FFmpeg duration probe uses ffprobe format.duration string only (basic check).
+
+### Next recommended milestone
+
+- Add voiceover mixing: combine draft.mp4 audio with voiceover placeholder audio track.
+- Add caption burn-in pass using subtitle filter.
+- Add `--clean-work` flag to remove render_work after successful assembly.
+- Add ffprobe duration validation against expected total_duration_seconds from the timeline.
+- Add `creative-assemble --run-id <id>` shortcut that also runs creative-timeline automatically.
+<!-- HANDOFF 044 END -->
+
+<!-- HANDOFF 045 START -->
+## Prompt 045 — creative-assemble: captions and voiceover
+
+### What was built
+
+Extended `creative-assemble` with staged post-processing for captions and voiceover.
+
+**New flags:**
+- `--burn-captions` — burn SRT captions via FFmpeg `subtitles` filter
+- `--captions <path>` — explicit SRT path (auto-discovered from run if omitted)
+- `--allow-missing-captions` — skip caption stage if no file found (warn, continue)
+- `--mix-voiceover` — mix audio via FFmpeg `amix` filter
+- `--voiceover <path>` — explicit audio path (auto-discovered from outputs if omitted)
+- `--allow-missing-voiceover` — skip voiceover stage if no file found (warn, continue)
+- `--run-id <id>` — used for captions auto-discovery from a pipeline run
+
+**Staged render pipeline:**
+`draft_assembled.mp4` → (voiceover) `draft_audio.mp4` → (captions) `draft.mp4`
+
+Final output is always `draft.mp4`. Intermediate stage files live in `render_work/`.
+
+**Extended result schema (`creative_assemble_result.v1`):**
+- `final_output_file` — final path after all stages
+- `captions` — `{requested, source_path, status: applied|skipped|failed}`
+- `voiceover` — `{requested, source_path, status: applied|skipped|failed}`
+- `stages` — per-stage `{name, file, status}` records
+
+**Safety additions:**
+- `escapeFilterPath()` escapes `\`, `:`, `'` for FFmpeg filter graph without shell involvement
+- Caption/voiceover paths validated to exist before any FFmpeg work begins
+- Pre-validation fails fast with a clear error; `--allow-missing-*` flags skip gracefully
+
+**Inspect/result/review-outputs** extended to display captions and voiceover status.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `internal/commands/creative_assemble.go` | Full rewrite with staged render, new types, new helpers |
+| `internal/commands/creative_assemble_test.go` | +11 tests (31 total) |
+| `internal/commands/creative_tools.go` | Show captions/voiceover in inspect |
+| `internal/commands/creative_plan_approval.go` | Show captions/voiceover in result |
+| `internal/commands/creative_stub_execution.go` | Show captions/voiceover in review-outputs |
+| `internal/cli/root.go` | Parse 7 new flags for creative-assemble |
+| `docs/artifacts/creative-assemble.md` | Full update |
+| `docs/creative-plans.md` | Updated command reference and assemble section |
+| `README.md` | Added captions/voiceover example |
+| `scripts/smoke-creative-assemble-media.sh` | New smoke test (requires BYOM_SMOKE_INPUT) |
+
+### Tests
+
+31 tests in `creative_assemble_test.go` — all pass.
+
+```sh
+go test ./internal/commands/ -run "TestCreativeAssemble|TestValidateCreativeAssemble|TestReviewCreativeAssemble|TestEscapeFilter|TestBuildVoiceover|TestBuildCaption" -count=1
+```
+
+### Known limitations
+
+- Caption auto-discovery only finds `captions.srt` from a run via `--run-id`; it does not search arbitrary locations.
+- Voiceover auto-discovery only looks in `outputs/voiceover.{wav,mp3,m4a,aac}`.
+- No `--clean-work` flag to remove render_work intermediates after success.
+- No ffprobe duration check on intermediate stage files, only on final `draft.mp4`.
+
+### Smoke test
+
+```sh
+# Requires a real video file
+BYOM_SMOKE_INPUT=/path/to/clip.mov bash scripts/smoke-creative-assemble-media.sh
+```
+
+### Next recommended milestone
+
+- Add `creative-assemble --run-id <id>` shortcut that chains `creative-timeline` automatically.
+- Add `--clean-work` flag.
+- Add ffprobe duration validation for intermediate stage files.
+- Add `--no-audio` flag for caption-only assembly without voiceover.
+<!-- HANDOFF 045 END -->

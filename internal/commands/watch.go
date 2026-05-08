@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/watch"
+	"github.com/mirelahmd/byom-video/internal/watch"
 )
 
 type WatchOptions struct {

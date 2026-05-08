@@ -10,17 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/events"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
-	"github.com/mirelahmd/OpenVFX/internal/report"
-	"github.com/mirelahmd/OpenVFX/internal/roughcut"
-	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/byom-video/internal/editorartifacts"
+	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/byom-video/internal/goalartifacts"
+	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/report"
+	"github.com/mirelahmd/byom-video/internal/roughcut"
+	"github.com/mirelahmd/byom-video/internal/runstore"
 )
 
 type ClipCardsOptions struct {
-	Overwrite bool
-	JSON      bool
+	Overwrite          bool
+	JSON               bool
+	PreferGoalRoughcut bool
 }
 
 type ReviewClipsOptions struct {
@@ -71,7 +73,7 @@ func ClipCardsCommand(runID string, stdout io.Writer, opts ClipCardsOptions) err
 		}
 	}
 
-	doc, warnings, err := buildClipCards(runDir, runID)
+	doc, warnings, err := buildClipCards(runDir, runID, opts)
 	if err != nil {
 		writeMaskFailure(log, "CLIP_CARDS_FAILED", err.Error())
 		return err
@@ -225,13 +227,7 @@ func EnhanceRoughcut(runID string, stdout io.Writer, opts EnhanceRoughcutOptions
 	return nil
 }
 
-func buildClipCards(runDir string, runID string) (editorartifacts.ClipCards, []string, error) {
-	roughcutPath := filepath.Join(runDir, "roughcut.json")
-	roughcutDoc, err := readRoughcutDocument(roughcutPath)
-	if err != nil {
-		return editorartifacts.ClipCards{}, nil, fmt.Errorf("read roughcut: %w", err)
-	}
-
+func buildClipCards(runDir string, runID string, opts ClipCardsOptions) (editorartifacts.ClipCards, []string, error) {
 	mask, _ := readInferenceMask(filepath.Join(runDir, "inference_mask.json"))
 	maskPresent := len(mask.Decisions) > 0
 
@@ -252,78 +248,151 @@ func buildClipCards(runDir string, runID string) (editorartifacts.ClipCards, []s
 		warnings = append(warnings, "inference_mask.json not present; using roughcut-only card mapping")
 	}
 
-	cards := make([]editorartifacts.ClipCard, 0, len(roughcutDoc.Clips))
-	for index, clip := range roughcutDoc.Clips {
-		decision, found := matchDecisionForClip(mask.Decisions, clip)
-		decisionID := ""
-		sourceText := strings.TrimSpace(clip.Text)
-		editIntent := strings.TrimSpace(clip.EditIntent)
-		if found {
-			decisionID = decision.ID
-			if sourceText == "" {
-				sourceText = decision.TextPreview
+	cards := []editorartifacts.ClipCard{}
+	source := editorartifacts.ClipCardsSource{
+		ExpansionsDir: "expansions",
+	}
+	if opts.PreferGoalRoughcut {
+		goalDoc, err := goalartifacts.ReadGoalRoughcut(filepath.Join(runDir, "goal_roughcut.json"))
+		if err != nil {
+			return editorartifacts.ClipCards{}, nil, fmt.Errorf("read goal roughcut: %w", err)
+		}
+		source.GoalRoughcutArtifact = "goal_roughcut.json"
+		source.RoughcutArtifact = "roughcut.json"
+		for index, clip := range goalDoc.Clips {
+			decision, found := matchDecisionForGoalClip(mask.Decisions, clip)
+			decisionID := ""
+			sourceText := strings.TrimSpace(clip.Text)
+			editIntent := strings.TrimSpace(clip.Reason)
+			if found {
+				decisionID = decision.ID
+				if sourceText == "" {
+					sourceText = decision.TextPreview
+				}
+				if editIntent == "" {
+					editIntent = decision.Reason
+				}
 			}
-			if editIntent == "" {
-				editIntent = decision.Reason
+			title := fallbackClipTitle(clip.Text)
+			if labels := labelByDecision[decisionID]; len(labels) > 0 {
+				title = labels[0]
 			}
+			description := fallbackClipDescription(clip.Text, editIntent)
+			if descriptions := descriptionByDecision[decisionID]; len(descriptions) > 0 {
+				description = descriptions[0]
+			}
+			cardWarnings := []string{}
+			verificationStatus := overallVerificationStatus
+			if verificationStatus == "" {
+				verificationStatus = "unknown"
+			}
+			if found {
+				if status, ok := verificationStatusByDecision[decision.ID]; ok {
+					verificationStatus = status.Status
+					cardWarnings = append(cardWarnings, status.Warnings...)
+				} else if overallVerificationStatus != "passed" && overallVerificationStatus != "unknown" {
+					cardWarnings = append(cardWarnings, "verification reported warnings or failures; review verification_results.json")
+				}
+			}
+			duration := clip.DurationSeconds
+			if duration <= 0 && clip.End >= clip.Start {
+				duration = clip.End - clip.Start
+			}
+			cards = append(cards, editorartifacts.ClipCard{
+				ID:                 fmt.Sprintf("card_%04d", index+1),
+				ClipID:             clip.ID,
+				HighlightID:        clip.HighlightID,
+				DecisionID:         decisionID,
+				Start:              clip.Start,
+				End:                clip.End,
+				DurationSeconds:    duration,
+				Score:              clip.GoalScore,
+				Title:              title,
+				Description:        description,
+				Captions:           uniqueNonEmpty(captionByDecision[decisionID]),
+				SourceText:         sourceText,
+				EditIntent:         editIntent,
+				VerificationStatus: nonEmptyString(verificationStatus, "unknown"),
+				Warnings:           cardWarnings,
+			})
 		}
-		title := fallbackClipTitle(clip.Text)
-		if labels := labelByDecision[decisionID]; len(labels) > 0 {
-			title = labels[0]
+	} else {
+		roughcutPath := filepath.Join(runDir, "roughcut.json")
+		roughcutDoc, err := readRoughcutDocument(roughcutPath)
+		if err != nil {
+			return editorartifacts.ClipCards{}, nil, fmt.Errorf("read roughcut: %w", err)
 		}
-		description := fallbackClipDescription(clip.Text, editIntent)
-		if descriptions := descriptionByDecision[decisionID]; len(descriptions) > 0 {
-			description = descriptions[0]
-		}
-		cardWarnings := []string{}
-		verificationStatus := overallVerificationStatus
-		if verificationStatus == "" {
-			verificationStatus = "unknown"
-		}
-		if found {
-			if status, ok := verificationStatusByDecision[decision.ID]; ok {
-				verificationStatus = status.Status
-				cardWarnings = append(cardWarnings, status.Warnings...)
+		source.RoughcutArtifact = "roughcut.json"
+		cards = make([]editorartifacts.ClipCard, 0, len(roughcutDoc.Clips))
+		for index, clip := range roughcutDoc.Clips {
+			decision, found := matchDecisionForClip(mask.Decisions, clip)
+			decisionID := ""
+			sourceText := strings.TrimSpace(clip.Text)
+			editIntent := strings.TrimSpace(clip.EditIntent)
+			if found {
+				decisionID = decision.ID
+				if sourceText == "" {
+					sourceText = decision.TextPreview
+				}
+				if editIntent == "" {
+					editIntent = decision.Reason
+				}
+			}
+			title := fallbackClipTitle(clip.Text)
+			if labels := labelByDecision[decisionID]; len(labels) > 0 {
+				title = labels[0]
+			}
+			description := fallbackClipDescription(clip.Text, editIntent)
+			if descriptions := descriptionByDecision[decisionID]; len(descriptions) > 0 {
+				description = descriptions[0]
+			}
+			cardWarnings := []string{}
+			verificationStatus := overallVerificationStatus
+			if verificationStatus == "" {
+				verificationStatus = "unknown"
+			}
+			if found {
+				if status, ok := verificationStatusByDecision[decision.ID]; ok {
+					verificationStatus = status.Status
+					cardWarnings = append(cardWarnings, status.Warnings...)
+				} else if overallVerificationStatus != "passed" && overallVerificationStatus != "unknown" {
+					cardWarnings = append(cardWarnings, "verification reported warnings or failures; review verification_results.json")
+				}
 			} else if overallVerificationStatus != "passed" && overallVerificationStatus != "unknown" {
 				cardWarnings = append(cardWarnings, "verification reported warnings or failures; review verification_results.json")
 			}
-		} else if overallVerificationStatus != "passed" && overallVerificationStatus != "unknown" {
-			cardWarnings = append(cardWarnings, "verification reported warnings or failures; review verification_results.json")
-		}
 
-		duration := clip.DurationSeconds
-		if duration <= 0 && clip.End >= clip.Start {
-			duration = clip.End - clip.Start
+			duration := clip.DurationSeconds
+			if duration <= 0 && clip.End >= clip.Start {
+				duration = clip.End - clip.Start
+			}
+			card := editorartifacts.ClipCard{
+				ID:                 fmt.Sprintf("card_%04d", index+1),
+				ClipID:             clip.ID,
+				HighlightID:        clip.HighlightID,
+				DecisionID:         decisionID,
+				Start:              clip.Start,
+				End:                clip.End,
+				DurationSeconds:    duration,
+				Score:              clip.Score,
+				Title:              title,
+				Description:        description,
+				Captions:           uniqueNonEmpty(captionByDecision[decisionID]),
+				SourceText:         sourceText,
+				EditIntent:         editIntent,
+				VerificationStatus: nonEmptyString(verificationStatus, "unknown"),
+				Warnings:           cardWarnings,
+			}
+			cards = append(cards, card)
 		}
-		card := editorartifacts.ClipCard{
-			ID:                 fmt.Sprintf("card_%04d", index+1),
-			ClipID:             clip.ID,
-			HighlightID:        clip.HighlightID,
-			DecisionID:         decisionID,
-			Start:              clip.Start,
-			End:                clip.End,
-			DurationSeconds:    duration,
-			Score:              clip.Score,
-			Title:              title,
-			Description:        description,
-			Captions:           uniqueNonEmpty(captionByDecision[decisionID]),
-			SourceText:         sourceText,
-			EditIntent:         editIntent,
-			VerificationStatus: nonEmptyString(verificationStatus, "unknown"),
-			Warnings:           cardWarnings,
-		}
-		cards = append(cards, card)
 	}
 
 	doc := editorartifacts.ClipCards{
 		SchemaVersion: "clip_cards.v1",
 		CreatedAt:     time.Now().UTC(),
 		RunID:         runID,
-		Source: editorartifacts.ClipCardsSource{
-			RoughcutArtifact: "roughcut.json",
-			ExpansionsDir:    "expansions",
-		},
-		Cards: cards,
+		Source:        source,
+		Cards:         cards,
 	}
 	if maskPresent {
 		doc.Source.InferenceMaskArtifact = "inference_mask.json"
@@ -460,6 +529,25 @@ func matchDecisionForClip(decisions []MaskDecision, clip roughcut.Clip) (MaskDec
 	}
 	for _, decision := range decisions {
 		if clip.SourceChunkID != "" && (decision.SourceChunkID == clip.SourceChunkID || decision.ChunkID == clip.SourceChunkID) {
+			return decision, true
+		}
+	}
+	for _, decision := range decisions {
+		if sameTiming(decision.Start, clip.Start) && sameTiming(decision.End, clip.End) {
+			return decision, true
+		}
+	}
+	return MaskDecision{}, false
+}
+
+func matchDecisionForGoalClip(decisions []MaskDecision, clip goalartifacts.GoalRoughcutClip) (MaskDecision, bool) {
+	for _, decision := range decisions {
+		if clip.HighlightID != "" && decision.HighlightID == clip.HighlightID {
+			return decision, true
+		}
+	}
+	for _, decision := range decisions {
+		if clip.ChunkID != "" && (decision.SourceChunkID == clip.ChunkID || decision.ChunkID == clip.ChunkID) {
 			return decision, true
 		}
 	}

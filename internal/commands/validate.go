@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mirelahmd/OpenVFX/internal/runvalidate"
+	"github.com/mirelahmd/byom-video/internal/runvalidate"
 )
 
 type ValidateOptions struct {

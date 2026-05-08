@@ -17,6 +17,7 @@ type SelectedClips struct {
 }
 
 type SelectedClipsSource struct {
+	GoalRoughcutArtifact     string `json:"goal_roughcut_artifact,omitempty"`
 	EnhancedRoughcutArtifact string `json:"enhanced_roughcut_artifact,omitempty"`
 	ClipCardsArtifact        string `json:"clip_cards_artifact,omitempty"`
 	RoughcutArtifact         string `json:"roughcut_artifact,omitempty"`

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/batch"
+	"github.com/mirelahmd/byom-video/internal/batch"
 )
 
 const RegistryPath = ".byom-video/watch/processed.json"

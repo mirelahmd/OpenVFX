@@ -21,6 +21,7 @@ type Config struct {
 	FFmpegScript  FFmpegScriptConfig
 	Report        EnabledConfig
 	Models        ModelsConfig
+	Tools         ToolsConfig
 }
 
 type ProjectConfig struct {
@@ -80,6 +81,32 @@ type ModelEntryConfig struct {
 	APIKeyEnv string         `json:"api_key_env,omitempty"`
 	BaseURL   string         `json:"base_url,omitempty"`
 	Options   map[string]any `json:"options,omitempty"`
+}
+
+type ToolsConfig struct {
+	Present  bool
+	Enabled  bool
+	Backends map[string]ToolBackendConfig
+	Routes   map[string]string
+}
+
+type ToolBackendConfig struct {
+	Kind            string         `json:"kind"`
+	Provider        string         `json:"provider"`
+	Model           string         `json:"model,omitempty"`
+	Endpoint        string         `json:"endpoint,omitempty"`
+	Auth            ToolAuthConfig `json:"auth"`
+	Options         map[string]any `json:"options,omitempty"`
+	RequestTemplate string         `json:"request_template,omitempty"`
+	ResponseMapping map[string]any `json:"response_mapping,omitempty"`
+}
+
+type ToolAuthConfig struct {
+	Type     string `json:"type"`
+	Header   string `json:"header,omitempty"`
+	Env      string `json:"env,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 func DefaultContent() string {
@@ -142,9 +169,53 @@ models:
 
   routes:
     highlight_reasoning: premium_reasoner
+    goal_reranking: local_qwen
     caption_expansion: local_qwen
     timeline_labeling: local_qwen
     verification: premium_reasoner
+
+tools:
+  enabled: false
+
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: ollama
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: none
+      options:
+        temperature: 0.2
+
+    voice_backend:
+      kind: voice_generation
+      provider: elevenlabs-compatible
+      model: voice-model-name
+      endpoint: https://api.example.com
+      auth:
+        type: header_env
+        header: xi-api-key
+        env: ELEVENLABS_API_KEY
+
+    custom_video_backend:
+      kind: video_generation
+      provider: custom-http
+      model: video-model-name
+      endpoint: https://example.com/generate
+      auth:
+        type: bearer_env
+        env: VIDEO_API_KEY
+      request_template: video_generation_v1
+      response_mapping:
+        output_url: $.data.video_url
+        job_id: $.data.job_id
+
+  routes:
+    creative.script: local_writer
+    creative.voiceover: voice_backend
+    creative.video_broll: custom_video_backend
+    creative.captions: local_writer
 `
 }
 
@@ -166,6 +237,10 @@ func Load(path string) (Config, error) {
 			Routes:    map[string]string{},
 			Providers: map[string]ModelEntryConfig{},
 			Routing:   map[string]string{},
+		},
+		Tools: ToolsConfig{
+			Backends: map[string]ToolBackendConfig{},
+			Routes:   map[string]string{},
 		},
 	}
 	pathByIndent := map[int]string{}
@@ -198,6 +273,7 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
 	normalizeModels(&cfg.Models)
+	NormalizeTools(&cfg.Tools)
 	return cfg, nil
 }
 
@@ -267,6 +343,11 @@ func setValue(cfg *Config, section string, key string, value string) {
 		if key == "enabled" {
 			cfg.Models.Enabled = parseBool(value)
 		}
+	case "tools":
+		cfg.Tools.Present = true
+		if key == "enabled" {
+			cfg.Tools.Enabled = parseBool(value)
+		}
 	case "models.routing":
 		cfg.Models.Present = true
 		if cfg.Models.Routing == nil {
@@ -279,6 +360,12 @@ func setValue(cfg *Config, section string, key string, value string) {
 			cfg.Models.Routes = map[string]string{}
 		}
 		cfg.Models.Routes[key] = value
+	case "tools.routes":
+		cfg.Tools.Present = true
+		if cfg.Tools.Routes == nil {
+			cfg.Tools.Routes = map[string]string{}
+		}
+		cfg.Tools.Routes[key] = value
 	default:
 		if entryName, optionKey, ok := modelOptionPath(section, "models.entries.", key); ok {
 			cfg.Models.Present = true
@@ -324,6 +411,52 @@ func setValue(cfg *Config, section string, key string, value string) {
 			provider := cfg.Models.Providers[providerName]
 			setModelEntryValue(&provider, key, value)
 			cfg.Models.Providers[providerName] = provider
+			return
+		}
+		if backendName, optionKey, ok := toolMapPath(section, "tools.backends.", ".options", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			if backend.Options == nil {
+				backend.Options = map[string]any{}
+			}
+			backend.Options[optionKey] = parseScalar(value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, mappingKey, ok := toolMapPath(section, "tools.backends.", ".response_mapping", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			if backend.ResponseMapping == nil {
+				backend.ResponseMapping = map[string]any{}
+			}
+			backend.ResponseMapping[mappingKey] = parseScalar(value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, authKey, ok := toolMapPath(section, "tools.backends.", ".auth", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			setToolBackendValue(&backend, authKey, value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, ok := strings.CutPrefix(section, "tools.backends."); ok && backendName != "" {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			setToolBackendValue(&backend, key, value)
+			cfg.Tools.Backends[backendName] = backend
 		}
 	}
 }
@@ -359,6 +492,46 @@ func modelOptionPath(section string, prefix string, key string) (string, string,
 	return name, optionKey, true
 }
 
+func toolMapPath(section string, prefix string, suffix string, key string) (string, string, bool) {
+	rest, ok := strings.CutPrefix(section, prefix)
+	if !ok {
+		return "", "", false
+	}
+	name, cutSuffix, ok := strings.Cut(rest, suffix)
+	if !ok || name == "" || cutSuffix != "" {
+		return "", "", false
+	}
+	if key == "" {
+		return "", "", false
+	}
+	return name, key, true
+}
+
+func setToolBackendValue(backend *ToolBackendConfig, key string, value string) {
+	switch key {
+	case "kind":
+		backend.Kind = value
+	case "provider":
+		backend.Provider = value
+	case "model":
+		backend.Model = value
+	case "endpoint":
+		backend.Endpoint = value
+	case "request_template":
+		backend.RequestTemplate = value
+	case "type":
+		backend.Auth.Type = value
+	case "header":
+		backend.Auth.Header = value
+	case "env":
+		backend.Auth.Env = value
+	case "username":
+		backend.Auth.Username = value
+	case "password":
+		backend.Auth.Password = value
+	}
+}
+
 func normalizeModels(models *ModelsConfig) {
 	if models.Entries == nil {
 		models.Entries = map[string]ModelEntryConfig{}
@@ -371,6 +544,15 @@ func normalizeModels(models *ModelsConfig) {
 	}
 	if len(models.Routes) == 0 && len(models.Routing) > 0 {
 		models.Routes = cloneStringMap(models.Routing)
+	}
+}
+
+func NormalizeTools(tools *ToolsConfig) {
+	if tools.Backends == nil {
+		tools.Backends = map[string]ToolBackendConfig{}
+	}
+	if tools.Routes == nil {
+		tools.Routes = map[string]string{}
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/manifest"
 )
 
 func TestEscape(t *testing.T) {
@@ -115,6 +115,34 @@ func TestWriteReportWithClipCardsAndEnhancedRoughcut(t *testing.T) {
 	for _, want := range []string{"Clip Cards", "Enhanced Roughcut", "Selected Clips", "Export Manifest", "Concat Plan", "Expansion Outputs", "Verification Summary", "Caption one", "Mode: <strong>reencode</strong>"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q", want)
+		}
+	}
+}
+
+func TestWriteReportWithGoalAwareHandoffSources(t *testing.T) {
+	runDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runDir, "goal_roughcut.json"), []byte(`{"schema_version":"goal_roughcut.v1","created_at":"2026-05-02T00:00:00Z","run_id":"run-1","goal":"make a short clip under 60 seconds","source":{"goal_rerank_artifact":"goal_rerank.json"},"plan":{"title":"Goal-Aware Roughcut Plan","intent":"Select clips matching the user goal.","total_duration_seconds":1},"clips":[{"id":"goal_clip_0001","highlight_id":"hl_0001","start":1,"end":2,"duration_seconds":1,"order":1,"goal_score":0.9,"reason":"Strong match","text":"short opener"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "clip_cards.json"), []byte(`{"schema_version":"clip_cards.v1","created_at":"2026-05-02T00:00:00Z","run_id":"run-1","source":{"goal_roughcut_artifact":"goal_roughcut.json","roughcut_artifact":"roughcut.json"},"cards":[{"id":"card_0001","clip_id":"goal_clip_0001","decision_id":"decision_0001","start":1,"end":2,"duration_seconds":1,"title":"Goal title","description":"Goal description","captions":["Goal caption"],"verification_status":"passed"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "selected_clips.json"), []byte(`{"schema_version":"selected_clips.v1","created_at":"2026-05-02T00:00:00Z","run_id":"run-1","source":{"goal_roughcut_artifact":"goal_roughcut.json","roughcut_artifact":"roughcut.json"},"input_path":"/tmp/input.mp4","clips":[{"id":"goal_clip_0001","order":1,"start":1,"end":2,"duration_seconds":1,"title":"Goal title","description":"Goal description","output_filename":"goal_clip_0001.mp4"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := manifest.New("run-1", "/tmp/input.mp4", time.Now().UTC())
+	m.Status = manifest.StatusCompleted
+	if _, err := Write(runDir, m); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{"Goal-Aware Editing", "Source: <code>goal_roughcut.json</code>"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("report missing %q: %s", want, text)
 		}
 	}
 }

@@ -8,20 +8,41 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mirelahmd/OpenVFX/internal/commands"
-	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/byom-video/internal/commands"
+	"github.com/mirelahmd/byom-video/internal/config"
 )
 
 const usage = `byom-video is a local-first media/video workflow control plane.
 
 Usage:
-  byom-video doctor
+  byom-video doctor [--transcription]
   byom-video version
   byom-video init [--force]
   byom-video config show [--json]
   byom-video models [--json]
   byom-video models validate [--json]
   byom-video models doctor [--json]
+  byom-video tools [--json]
+  byom-video tools validate [--json] [--strict] [--check-env]
+  byom-video tools requirements --goal <text> [--json]
+  byom-video creative-plan <input-file> --goal <text> [--json] [--strict] [--write-artifact]
+  byom-video creative-plans
+  byom-video inspect-creative-plan <creative_plan_id> [--json]
+  byom-video review-creative-plan <creative_plan_id> [--json] [--write-artifact]
+  byom-video approve-creative-plan <creative_plan_id>
+  byom-video creative-plan-events <creative_plan_id> [--json]
+  byom-video creative-preview <creative_plan_id> [--json] [--strict] [--overwrite] [--check-env]
+  byom-video execute-creative-plan <creative_plan_id> [--yes] [--dry-run] [--strict] [--check-env] [--json]
+  byom-video creative-execute-stub <creative_plan_id> [--yes] [--overwrite] [--json] [--step-type <type>] [--dry-run]
+  byom-video review-creative-outputs <creative_plan_id> [--json] [--write-artifact]
+  byom-video creative-timeline <creative_plan_id> [--run-id <run_id>] [--overwrite] [--json] [--prefer-goal]
+  byom-video creative-render-plan <creative_plan_id> [--overwrite] [--json]
+  byom-video review-creative-timeline <creative_plan_id> [--json] [--write-artifact]
+  byom-video creative-assemble <creative_plan_id> [--overwrite] [--json] [--mode <reencode|stream-copy>] [--keep-work] [--dry-run] [--max-clips <n>] [--burn-captions] [--captions <path>] [--allow-missing-captions] [--mix-voiceover] [--voiceover <path>] [--allow-missing-voiceover]
+  byom-video validate-creative-assemble <creative_plan_id> [--json]
+  byom-video review-creative-assemble <creative_plan_id> [--json] [--write-artifact]
+  byom-video creative-result <creative_plan_id> [--json] [--write-artifact]
+  byom-video validate-creative-plan <creative_plan_id> [--json]
   byom-video run <input-file> [--with-transcript-stub | --with-transcript] [--with-captions] [--with-chunks] [--with-highlights] [--with-roughcut] [--with-ffmpeg-script] [--ffmpeg-mode <stream-copy|reencode>] [--with-report]
   byom-video pipeline <input-file> --preset <shorts|metadata>
   byom-video batch <input-dir> [--preset <shorts|metadata>] [--recursive] [--limit <n>] [--fail-fast] [--dry-run] [--validate] [--export | --export-and-validate]
@@ -33,13 +54,14 @@ Usage:
   byom-video retry-watch [--preset <shorts|metadata>] [--limit <n>] [--fail-fast] [--dry-run] [--validate] [--export | --export-and-validate]
   byom-video rerun <run_id> [--preset <shorts|metadata>] [--dry-run] [--validate] [--export | --export-and-validate]
   byom-video cleanup [--failed] [--stale-running] [--missing-manifest] [--older-than-hours <n>] [--limit <n>] [--json] [--delete] [--yes]
-  byom-video plan <path> --goal <text> [--mode <file|batch|watch>] [--execute] [--dry-run] [--preset <shorts|metadata>] [--max-clips <n>] [--recursive] [--once] [--limit <n>] [--with-export] [--with-validate] [--with-report]
+  byom-video plan <path> --goal <text> [--mode <file|batch|watch>] [--goal-aware] [--goal-use-ollama] [--goal-fallback-deterministic] [--execute] [--dry-run] [--preset <shorts|metadata>] [--max-clips <n>] [--recursive] [--once] [--limit <n>] [--with-export] [--with-validate] [--with-report]
   byom-video plans
   byom-video inspect-plan <plan_id> [--json]
   byom-video plan-artifacts <plan_id> [--json]
   byom-video review-plan <plan_id> [--json] [--write-artifact]
   byom-video approve-plan <plan_id>
   byom-video execute-plan <plan_id> [--yes] [--dry-run]
+  byom-video agent-result <plan_id> [--json] [--write-artifact]
   byom-video diff-plan <plan_id_a> <plan_id_b> [--json] [--write-artifact]
   byom-video revise-plan <plan_id> --request <text> [--dry-run] [--json] [--show-diff]
   byom-video snapshots <plan_id>
@@ -49,13 +71,17 @@ Usage:
   byom-video inspect <run_id> [--json]
   byom-video artifacts <run_id> [--type <name>]
   byom-video validate <run_id> [--json]
-  byom-video clip-cards <run_id> [--overwrite] [--json]
+  byom-video clip-cards <run_id> [--overwrite] [--json] [--prefer-goal-roughcut]
   byom-video review-clips <run_id> [--json] [--write-artifact]
   byom-video enhance-roughcut <run_id> [--overwrite] [--json]
-  byom-video selected-clips <run_id> [--overwrite] [--json]
+  byom-video selected-clips <run_id> [--overwrite] [--json] [--prefer-goal-roughcut]
   byom-video export-manifest <run_id> [--overwrite] [--json]
   byom-video ffmpeg-script <run_id> [--mode <stream-copy|reencode>] [--overwrite] [--json]
   byom-video concat-plan <run_id> [--overwrite] [--json]
+  byom-video goal-handoff <run_id> [--overwrite] [--json]
+  byom-video goal-review-bundle <run_id> [--json] [--overwrite]
+  byom-video goal-rerank <run_id> --goal <text> [--use-ollama] [--fallback-deterministic]
+  byom-video goal-roughcut <run_id> [--overwrite] [--json]
   byom-video mask-template <run_id>
   byom-video inspect-mask <run_id> [--json]
   byom-video mask-validate <run_id> [--json]
@@ -94,12 +120,13 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	switch args[0] {
 	case "doctor":
-		if len(args) != 1 {
-			fmt.Fprintln(stderr, "error: doctor does not accept arguments")
+		doctorOpts, err := parseDoctorArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
 			fmt.Fprint(stderr, usage)
 			return 2
 		}
-		if err := commands.Doctor(stdout); err != nil {
+		if err := commands.Doctor(stdout, doctorOpts); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -161,6 +188,253 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 0
 		}
 		if err := commands.Models(stdout, commands.ModelsOptions{JSON: opts.JSON}); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "tools":
+		if len(args) > 1 && args[1] == "requirements" {
+			goal, opts, err := parseToolsRequirementsArgs(args[2:])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				fmt.Fprint(stderr, usage)
+				return 2
+			}
+			if err := commands.ToolsRequirements(stdout, goal, opts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+		opts, validateOpts, err := parseToolsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if validateOpts != nil {
+			if err := commands.ToolsValidate(stdout, *validateOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+		if err := commands.Tools(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-plan":
+		inputPath, opts, err := parseCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativePlanCommand(inputPath, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-plans":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "error: creative-plans does not accept arguments")
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativePlans(stdout); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "inspect-creative-plan":
+		planID, opts, err := parseInspectCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.InspectCreativePlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-creative-plan":
+		planID, opts, err := parseReviewCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewCreativePlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "approve-creative-plan":
+		planID, err := parseApproveCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ApproveCreativePlan(planID, stdout, commands.ApproveCreativePlanOptions{}); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-plan-events":
+		planID, opts, err := parseCreativePlanEventsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativePlanEvents(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-preview":
+		planID, opts, err := parseCreativePreviewArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativePreview(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "execute-creative-plan":
+		planID, opts, err := parseExecuteCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ExecuteCreativePlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-result":
+		planID, opts, err := parseCreativeResultArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeResult(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "validate-creative-plan":
+		planID, opts, err := parseValidateCreativePlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ValidateCreativePlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-execute-stub":
+		planID, opts, err := parseCreativeExecuteStubArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeExecuteStub(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-creative-outputs":
+		planID, opts, err := parseReviewCreativeOutputsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewCreativeOutputs(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-timeline":
+		planID, opts, err := parseCreativeTimelineArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeTimeline(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-render-plan":
+		planID, opts, err := parseCreativeRenderPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeRenderPlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-creative-timeline":
+		planID, opts, err := parseReviewCreativeTimelineArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewCreativeTimeline(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-assemble":
+		planID, opts, err := parseCreativeAssembleArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeAssemble(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "validate-creative-assemble":
+		planID, opts, err := parseValidateCreativeAssembleArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ValidateCreativeAssemble(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-creative-assemble":
+		planID, opts, err := parseReviewCreativeAssembleArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewCreativeAssemble(planID, stdout, opts); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -383,6 +657,18 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 1
 		}
 		return 0
+	case "agent-result":
+		planID, opts, err := parseAgentResultArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentResultCommand(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
 	case "diff-plan":
 		a, b, opts, err := parseDiffPlanArgs(args[1:])
 		if err != nil {
@@ -570,6 +856,54 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		if err := commands.ConcatPlanCommand(runID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "goal-handoff":
+		runID, opts, err := parseGoalHandoffArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.GoalHandoffCommand(runID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "goal-review-bundle":
+		runID, opts, err := parseGoalReviewBundleArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.GoalReviewBundleCommand(runID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "goal-rerank":
+		runID, opts, err := parseGoalRerankArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.GoalRerankCommand(runID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "goal-roughcut":
+		runID, opts, err := parseGoalRoughcutArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.GoalRoughcutCommand(runID, stdout, opts); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -1246,6 +1580,582 @@ func parseModelsArgs(args []string) (commands.ModelsOptions, error) {
 	return opts, nil
 }
 
+func parseToolsArgs(args []string) (commands.ToolsOptions, *commands.ToolsValidateOptions, error) {
+	toolsOpts := commands.ToolsOptions{}
+	validateOpts := &commands.ToolsValidateOptions{}
+	validateMode := false
+	for _, arg := range args {
+		switch arg {
+		case "validate":
+			validateMode = true
+		case "--json":
+			toolsOpts.JSON = true
+			validateOpts.JSON = true
+		case "--strict":
+			validateOpts.Strict = true
+		case "--check-env":
+			validateOpts.CheckEnv = true
+		default:
+			return toolsOpts, nil, fmt.Errorf("unknown tools flag %q", arg)
+		}
+	}
+	if validateMode {
+		return toolsOpts, validateOpts, nil
+	}
+	if validateOpts.Strict || validateOpts.CheckEnv {
+		return toolsOpts, nil, errors.New("--strict and --check-env require tools validate")
+	}
+	return toolsOpts, nil, nil
+}
+
+func parseToolsRequirementsArgs(args []string) (string, commands.ToolsRequirementsOptions, error) {
+	opts := commands.ToolsRequirementsOptions{}
+	goal := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--goal":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--goal requires a value")
+			}
+			index++
+			goal = args[index]
+		case "--json":
+			opts.JSON = true
+		default:
+			if value, ok := strings.CutPrefix(arg, "--goal="); ok {
+				goal = value
+				continue
+			}
+			return "", opts, fmt.Errorf("unknown tools requirements flag %q", arg)
+		}
+	}
+	if strings.TrimSpace(goal) == "" {
+		return "", opts, errors.New("tools requirements requires --goal")
+	}
+	return goal, opts, nil
+}
+
+func parseCreativePlanArgs(args []string) (string, commands.CreativePlanOptions, error) {
+	opts := commands.CreativePlanOptions{WriteArtifact: true}
+	inputPath := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--goal":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--goal requires a value")
+			}
+			index++
+			opts.Goal = args[index]
+		case "--json":
+			opts.JSON = true
+		case "--strict":
+			opts.Strict = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if value, ok := strings.CutPrefix(arg, "--goal="); ok {
+				opts.Goal = value
+				continue
+			}
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-plan flag %q", arg)
+			}
+			if inputPath != "" {
+				return "", opts, errors.New("creative-plan requires exactly one input file")
+			}
+			inputPath = arg
+		}
+	}
+	if inputPath == "" {
+		return "", opts, errors.New("creative-plan requires exactly one input file")
+	}
+	if strings.TrimSpace(opts.Goal) == "" {
+		return "", opts, errors.New("creative-plan requires --goal")
+	}
+	return inputPath, opts, nil
+}
+
+func parseInspectCreativePlanArgs(args []string) (string, commands.InspectCreativePlanOptions, error) {
+	opts := commands.InspectCreativePlanOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown inspect-creative-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("inspect-creative-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("inspect-creative-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewCreativePlanArgs(args []string) (string, commands.ReviewCreativePlanOptions, error) {
+	opts := commands.ReviewCreativePlanOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown review-creative-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-creative-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-creative-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseApproveCreativePlanArgs(args []string) (string, error) {
+	planID := ""
+	for _, arg := range args {
+		if len(arg) > 0 && arg[0] == '-' {
+			return "", fmt.Errorf("approve-creative-plan does not accept flags; got %q", arg)
+		}
+		if planID != "" {
+			return "", errors.New("approve-creative-plan requires exactly one plan id")
+		}
+		planID = arg
+	}
+	if planID == "" {
+		return "", errors.New("approve-creative-plan requires exactly one plan id")
+	}
+	return planID, nil
+}
+
+func parseCreativePlanEventsArgs(args []string) (string, commands.CreativePlanEventsOptions, error) {
+	opts := commands.CreativePlanEventsOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-plan-events flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-plan-events requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-plan-events requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativePreviewArgs(args []string) (string, commands.CreativePreviewOptions, error) {
+	opts := commands.CreativePreviewOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--strict":
+			opts.Strict = true
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--check-env":
+			opts.CheckEnv = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-preview flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-preview requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-preview requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseExecuteCreativePlanArgs(args []string) (string, commands.ExecuteCreativePlanOptions, error) {
+	opts := commands.ExecuteCreativePlanOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--yes":
+			opts.Yes = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--strict":
+			opts.Strict = true
+		case "--check-env":
+			opts.CheckEnv = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown execute-creative-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("execute-creative-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("execute-creative-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativeResultArgs(args []string) (string, commands.CreativeResultOptions, error) {
+	opts := commands.CreativeResultOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-result flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-result requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-result requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseValidateCreativePlanArgs(args []string) (string, commands.ValidateCreativePlanOptions, error) {
+	opts := commands.ValidateCreativePlanOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown validate-creative-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("validate-creative-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("validate-creative-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativeExecuteStubArgs(args []string) (string, commands.CreativeExecuteStubOptions, error) {
+	opts := commands.CreativeExecuteStubOptions{}
+	planID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--yes":
+			opts.Yes = true
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--step-type":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--step-type requires a value")
+			}
+			index++
+			opts.StepType = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--step-type="); ok {
+				opts.StepType = value
+				continue
+			}
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-execute-stub flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-execute-stub requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-execute-stub requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewCreativeOutputsArgs(args []string) (string, commands.ReviewCreativeOutputsOptions, error) {
+	opts := commands.ReviewCreativeOutputsOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown review-creative-outputs flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-creative-outputs requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-creative-outputs requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativeTimelineArgs(args []string) (string, commands.CreativeTimelineOptions, error) {
+	opts := commands.CreativeTimelineOptions{}
+	planID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--json":
+			opts.JSON = true
+		case arg == "--overwrite":
+			opts.Overwrite = true
+		case arg == "--prefer-goal":
+			opts.PreferGoal = true
+		case arg == "--run-id":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--run-id requires a value")
+			}
+			i++
+			opts.RunID = args[i]
+		case strings.HasPrefix(arg, "--run-id="):
+			opts.RunID = strings.TrimPrefix(arg, "--run-id=")
+		case len(arg) > 0 && arg[0] == '-':
+			return "", opts, fmt.Errorf("unknown creative-timeline flag %q", arg)
+		default:
+			if planID != "" {
+				return "", opts, errors.New("creative-timeline requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-timeline requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativeRenderPlanArgs(args []string) (string, commands.CreativeRenderPlanOptions, error) {
+	opts := commands.CreativeRenderPlanOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--overwrite":
+			opts.Overwrite = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown creative-render-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-render-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-render-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewCreativeTimelineArgs(args []string) (string, commands.ReviewCreativeTimelineOptions, error) {
+	opts := commands.ReviewCreativeTimelineOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown review-creative-timeline flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-creative-timeline requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-creative-timeline requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreativeAssembleArgs(args []string) (string, commands.CreativeAssembleOptions, error) {
+	opts := commands.CreativeAssembleOptions{}
+	planID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--json":
+			opts.JSON = true
+		case arg == "--overwrite":
+			opts.Overwrite = true
+		case arg == "--dry-run":
+			opts.DryRun = true
+		case arg == "--keep-work":
+			opts.KeepWork = true
+		case arg == "--mode":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--mode requires a value")
+			}
+			i++
+			opts.Mode = args[i]
+		case strings.HasPrefix(arg, "--mode="):
+			opts.Mode = strings.TrimPrefix(arg, "--mode=")
+		case arg == "--max-clips":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--max-clips requires a value")
+			}
+			i++
+			n, err := parseIntFlag("--max-clips", args[i])
+			if err != nil {
+				return "", opts, err
+			}
+			opts.MaxClips = n
+		case strings.HasPrefix(arg, "--max-clips="):
+			n, err := parseIntFlag("--max-clips", strings.TrimPrefix(arg, "--max-clips="))
+			if err != nil {
+				return "", opts, err
+			}
+			opts.MaxClips = n
+		case arg == "--burn-captions":
+			opts.BurnCaptions = true
+		case arg == "--allow-missing-captions":
+			opts.AllowMissingCaptions = true
+		case arg == "--captions":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--captions requires a value")
+			}
+			i++
+			opts.CaptionsPath = args[i]
+		case strings.HasPrefix(arg, "--captions="):
+			opts.CaptionsPath = strings.TrimPrefix(arg, "--captions=")
+		case arg == "--mix-voiceover":
+			opts.MixVoiceover = true
+		case arg == "--allow-missing-voiceover":
+			opts.AllowMissingVoiceover = true
+		case arg == "--voiceover":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--voiceover requires a value")
+			}
+			i++
+			opts.VoiceoverPath = args[i]
+		case strings.HasPrefix(arg, "--voiceover="):
+			opts.VoiceoverPath = strings.TrimPrefix(arg, "--voiceover=")
+		case arg == "--run-id":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--run-id requires a value")
+			}
+			i++
+			opts.RunID = args[i]
+		case strings.HasPrefix(arg, "--run-id="):
+			opts.RunID = strings.TrimPrefix(arg, "--run-id=")
+		case len(arg) > 0 && arg[0] == '-':
+			return "", opts, fmt.Errorf("unknown creative-assemble flag %q", arg)
+		default:
+			if planID != "" {
+				return "", opts, errors.New("creative-assemble requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-assemble requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseValidateCreativeAssembleArgs(args []string) (string, commands.ValidateCreativeAssembleOptions, error) {
+	opts := commands.ValidateCreativeAssembleOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown validate-creative-assemble flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("validate-creative-assemble requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("validate-creative-assemble requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewCreativeAssembleArgs(args []string) (string, commands.ReviewCreativeAssembleOptions, error) {
+	opts := commands.ReviewCreativeAssembleOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown review-creative-assemble flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-creative-assemble requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-creative-assemble requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
 func parseRunsArgs(args []string) (commands.RunsOptions, error) {
 	opts := commands.RunsOptions{Limit: 20}
 	for index := 0; index < len(args); index++ {
@@ -1368,6 +2278,8 @@ func parseClipCardsArgs(args []string) (string, commands.ClipCardsOptions, error
 			opts.Overwrite = true
 		case "--json":
 			opts.JSON = true
+		case "--prefer-goal-roughcut":
+			opts.PreferGoalRoughcut = true
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return "", opts, fmt.Errorf("unknown clip-cards flag %q", arg)
@@ -1443,6 +2355,8 @@ func parseSelectedClipsArgs(args []string) (string, commands.SelectedClipsOption
 			opts.Overwrite = true
 		case "--json":
 			opts.JSON = true
+		case "--prefer-goal-roughcut":
+			opts.PreferGoalRoughcut = true
 		default:
 			if len(arg) > 0 && arg[0] == '-' {
 				return "", opts, fmt.Errorf("unknown selected-clips flag %q", arg)
@@ -1544,6 +2458,121 @@ func parseConcatPlanArgs(args []string) (string, commands.ConcatPlanOptions, err
 	}
 	if runID == "" {
 		return "", opts, errors.New("concat-plan requires exactly one run id")
+	}
+	return runID, opts, nil
+}
+
+func parseGoalHandoffArgs(args []string) (string, commands.GoalHandoffOptions, error) {
+	opts := commands.GoalHandoffOptions{}
+	runID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown goal-handoff flag %q", arg)
+			}
+			if runID != "" {
+				return "", opts, errors.New("goal-handoff requires exactly one run id")
+			}
+			runID = arg
+		}
+	}
+	if runID == "" {
+		return "", opts, errors.New("goal-handoff requires exactly one run id")
+	}
+	return runID, opts, nil
+}
+
+func parseGoalReviewBundleArgs(args []string) (string, commands.GoalReviewBundleOptions, error) {
+	var runID string
+	opts := commands.GoalReviewBundleOptions{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--overwrite":
+			opts.Overwrite = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown goal-review-bundle flag %q", arg)
+			}
+			if runID != "" {
+				return "", opts, errors.New("goal-review-bundle requires exactly one run id")
+			}
+			runID = arg
+		}
+	}
+	if runID == "" {
+		return "", opts, errors.New("goal-review-bundle requires exactly one run id")
+	}
+	return runID, opts, nil
+}
+
+func parseGoalRerankArgs(args []string) (string, commands.GoalRerankOptions, error) {
+	opts := commands.GoalRerankOptions{}
+	runID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--use-ollama":
+			opts.UseOllama = true
+		case "--fallback-deterministic":
+			opts.FallbackDeterministic = true
+		case "--goal":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--goal requires a value")
+			}
+			index++
+			opts.Goal = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--goal="); ok {
+				opts.Goal = value
+				continue
+			}
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown goal-rerank flag %q", arg)
+			}
+			if runID != "" {
+				return "", opts, errors.New("goal-rerank requires exactly one run id")
+			}
+			runID = arg
+		}
+	}
+	if runID == "" {
+		return "", opts, errors.New("goal-rerank requires exactly one run id")
+	}
+	if strings.TrimSpace(opts.Goal) == "" {
+		return "", opts, errors.New("--goal is required")
+	}
+	return runID, opts, nil
+}
+
+func parseGoalRoughcutArgs(args []string) (string, commands.GoalRoughcutOptions, error) {
+	opts := commands.GoalRoughcutOptions{}
+	runID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if len(arg) > 0 && arg[0] == '-' {
+				return "", opts, fmt.Errorf("unknown goal-roughcut flag %q", arg)
+			}
+			if runID != "" {
+				return "", opts, errors.New("goal-roughcut requires exactly one run id")
+			}
+			runID = arg
+		}
+	}
+	if runID == "" {
+		return "", opts, errors.New("goal-roughcut requires exactly one run id")
 	}
 	return runID, opts, nil
 }
@@ -2437,6 +3466,12 @@ func parsePlanArgs(args []string) (string, commands.PlanOptions, error) {
 		case "--with-report":
 			opts.WithReport = true
 			opts.WithReportSet = true
+		case "--goal-aware":
+			opts.GoalAware = true
+		case "--goal-use-ollama":
+			opts.GoalUseOllama = true
+		case "--goal-fallback-deterministic":
+			opts.GoalFallbackDeterministic = true
 		case "--recursive":
 			opts.Recursive = true
 		case "--once":
@@ -2529,6 +3564,9 @@ func parsePlanArgs(args []string) (string, commands.PlanOptions, error) {
 	if opts.Goal == "" {
 		return "", opts, errors.New("--goal is required")
 	}
+	if !opts.GoalAware && (opts.GoalUseOllama || opts.GoalFallbackDeterministic) {
+		return "", opts, errors.New("--goal-use-ollama and --goal-fallback-deterministic require --goal-aware")
+	}
 	if opts.MaxClips < 0 {
 		return "", opts, errors.New("--max-clips must be positive")
 	}
@@ -2588,6 +3626,32 @@ func parsePlanArtifactsArgs(args []string) (string, commands.PlanArtifactsOption
 	}
 	if planID == "" {
 		return "", opts, errors.New("plan-artifacts requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentResultArgs(args []string) (string, commands.AgentResultOptions, error) {
+	var planID string
+	opts := commands.AgentResultOptions{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-result flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("agent-result requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("agent-result requires exactly one plan id")
 	}
 	return planID, opts, nil
 }
@@ -3350,4 +4414,17 @@ func parseIntFlag(name string, value string) (int, error) {
 		return 0, fmt.Errorf("%s must be an integer", name)
 	}
 	return parsed, nil
+}
+
+func parseDoctorArgs(args []string) (commands.DoctorOptions, error) {
+	var opts commands.DoctorOptions
+	for _, a := range args {
+		switch a {
+		case "--transcription":
+			opts.Transcription = true
+		default:
+			return opts, fmt.Errorf("unknown flag %q for doctor", a)
+		}
+	}
+	return opts, nil
 }

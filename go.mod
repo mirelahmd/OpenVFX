@@ -1,3 +1,3 @@
-module github.com/mirelahmd/OpenVFX
+module github.com/mirelahmd/byom-video
 
 go 1.22

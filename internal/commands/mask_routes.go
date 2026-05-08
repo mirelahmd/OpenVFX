@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/config"
-	"github.com/mirelahmd/OpenVFX/internal/events"
-	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/byom-video/internal/config"
+	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/byom-video/internal/runstore"
 )
 
 type RoutesPlanOptions struct {

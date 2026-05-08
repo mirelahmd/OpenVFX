@@ -1,0 +1,26 @@
+tools:
+  enabled: false
+
+  backends:
+    script_backend:
+      kind: text_generation
+      provider: openai-compatible
+      model: placeholder-script-model
+      endpoint: https://api.example.com/v1
+      auth:
+        type: bearer_env
+        env: OPENAI_API_KEY
+
+    voice_backend:
+      kind: voice_generation
+      provider: elevenlabs-compatible
+      model: placeholder-voice-model
+      endpoint: https://api.example.com
+      auth:
+        type: header_env
+        header: xi-api-key
+        env: ELEVENLABS_API_KEY
+
+  routes:
+    creative.script: script_backend
+    creative.voiceover: voice_backend

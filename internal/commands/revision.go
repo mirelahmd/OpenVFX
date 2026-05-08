@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/agent"
+	"github.com/mirelahmd/byom-video/internal/agent"
 )
 
 type RevisePlanOptions struct {
@@ -288,6 +288,8 @@ func refreshPreviews(plan *agent.Plan) {
 		action := &plan.Actions[i]
 		switch action.Type {
 		case "run_pipeline", "batch_pipeline", "watch_pipeline":
+			action.CommandPreview = agent.CommandPreviewForOptions(action.Type, plan.InputPath, plan.Preset, "", action.Options)
+		case "goal_rerank", "goal_roughcut":
 			action.CommandPreview = agent.CommandPreviewForOptions(action.Type, plan.InputPath, plan.Preset, "", action.Options)
 		case "export_run":
 			action.CommandPreview = "./byom-video export <run_id>"

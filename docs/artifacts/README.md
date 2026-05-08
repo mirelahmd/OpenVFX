@@ -33,6 +33,8 @@ Future model-assistance contracts:
 - [`model_requests.dryrun.json`](model-requests.md)
 - `model_requests.executed.json`
 - [`verification_results.json`](verification-results.md)
+- [`goal_rerank.json`](goal-rerank.md)
+- [`goal_roughcut.json`](goal-roughcut.md)
 - [`clip_cards.json`](clip-cards.md)
 - [`enhanced_roughcut.json`](enhanced-roughcut.md)
 - [`selected_clips.json`](selected-clips.md)

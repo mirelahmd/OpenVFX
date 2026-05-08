@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
-	"github.com/mirelahmd/OpenVFX/internal/exporter"
-	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/byom-video/internal/exportartifacts"
+	"github.com/mirelahmd/byom-video/internal/exporter"
+	"github.com/mirelahmd/byom-video/internal/manifest"
 )
 
 func TestSelectedClipsFromEnhancedRoughcut(t *testing.T) {
@@ -200,7 +200,65 @@ func TestInspectShowsSelectedAndExportSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	if !strings.Contains(text, "selected clips:") || !strings.Contains(text, "export manifest:") || !strings.Contains(text, "concat plan:") {
+	if !strings.Contains(text, "selected clips:") || !strings.Contains(text, "selected source:") || !strings.Contains(text, "export manifest:") || !strings.Contains(text, "concat plan:") {
 		t.Fatalf("inspect output missing export handoff summary: %s", text)
+	}
+}
+
+func TestSelectedClipsPreferGoalRoughcutUsesGoalSource(t *testing.T) {
+	t.Chdir(t.TempDir())
+	runID, runDir := setupGoalAwareRun(t)
+	if err := writeJSONFile(filepath.Join(runDir, "goal_roughcut.json"), map[string]any{
+		"schema_version": "goal_roughcut.v1",
+		"created_at":     time.Now().UTC(),
+		"run_id":         runID,
+		"goal":           "make a short clip under 60 seconds",
+		"source":         map[string]any{"goal_rerank_artifact": "goal_rerank.json", "roughcut_artifact": "roughcut.json"},
+		"plan":           map[string]any{"title": "Goal-Aware Roughcut Plan", "intent": "Select clips matching the user goal.", "total_duration_seconds": 28.4},
+		"clips": []map[string]any{
+			{"id": "goal_clip_0001", "highlight_id": "hl_0001", "chunk_id": "chunk_0001", "start": 0, "end": 28.4, "duration_seconds": 28.4, "order": 1, "goal_score": 0.91, "reason": "Strong match", "text": "cinematic opening shot with strong visual moment"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SelectedClipsCommand(runID, &bytes.Buffer{}, SelectedClipsOptions{PreferGoalRoughcut: true}); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := exportartifacts.ReadSelectedClips(filepath.Join(runDir, "selected_clips.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Source.GoalRoughcutArtifact != "goal_roughcut.json" {
+		t.Fatalf("unexpected source: %+v", doc.Source)
+	}
+	if len(doc.Clips) != 1 || doc.Clips[0].ID != "goal_clip_0001" {
+		t.Fatalf("unexpected selected clips: %+v", doc.Clips)
+	}
+}
+
+func TestGoalHandoffCreatesGoalAwareArtifacts(t *testing.T) {
+	t.Chdir(t.TempDir())
+	runID, runDir := setupGoalAwareRun(t)
+	writeMaskRoughcut(t, runDir)
+	if err := writeJSONFile(filepath.Join(runDir, "goal_roughcut.json"), map[string]any{
+		"schema_version": "goal_roughcut.v1",
+		"created_at":     time.Now().UTC(),
+		"run_id":         runID,
+		"goal":           "make a short clip under 60 seconds",
+		"source":         map[string]any{"goal_rerank_artifact": "goal_rerank.json", "roughcut_artifact": "roughcut.json"},
+		"plan":           map[string]any{"title": "Goal-Aware Roughcut Plan", "intent": "Select clips matching the user goal.", "total_duration_seconds": 28.4},
+		"clips": []map[string]any{
+			{"id": "goal_clip_0001", "highlight_id": "hl_0001", "chunk_id": "chunk_0001", "start": 0, "end": 28.4, "duration_seconds": 28.4, "order": 1, "goal_score": 0.91, "reason": "Strong match", "text": "cinematic opening shot with strong visual moment"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := GoalHandoffCommand(runID, &bytes.Buffer{}, GoalHandoffOptions{Overwrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"clip_cards.json", "selected_clips.json", "ffmpeg_commands.sh", "export_manifest.json"} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
+			t.Fatalf("missing %s: %v", name, err)
+		}
 	}
 }

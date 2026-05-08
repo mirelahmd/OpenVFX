@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mirelahmd/OpenVFX/internal/runinfo"
+	"github.com/mirelahmd/byom-video/internal/runinfo"
 )
 
 type RunsOptions struct {
@@ -76,14 +76,28 @@ func Inspect(runID string, stdout io.Writer, opts InspectOptions) error {
 	if summary.ReportPath != "" {
 		fmt.Fprintf(stdout, "  report path: %s\n", summary.ReportPath)
 	}
+	if summary.GoalReviewBundlePath != "" {
+		fmt.Fprintf(stdout, "  goal bundle: %s\n", summary.GoalReviewBundlePath)
+	}
+	if summary.AgentResultPath != "" {
+		fmt.Fprintf(stdout, "  agent result:%s\n", " "+summary.AgentResultPath)
+	}
 	fmt.Fprintln(stdout, "  counts:")
 	printOptionalCount(stdout, "transcript segments", summary.TranscriptSegmentCount)
 	printOptionalCount(stdout, "chunks", summary.ChunkCount)
 	printOptionalCount(stdout, "highlights", summary.HighlightCount)
 	printOptionalCount(stdout, "roughcut clips", summary.RoughcutClipCount)
+	printOptionalCount(stdout, "goal rerank", summary.GoalRerankCount)
+	if summary.GoalRerankMode != "" {
+		fmt.Fprintf(stdout, "    %-20s %s\n", "goal rerank mode:", summary.GoalRerankMode)
+	}
+	printOptionalCount(stdout, "goal roughcut", summary.GoalRoughcutClipCount)
 	printOptionalCount(stdout, "clip cards", summary.ClipCardCount)
 	printOptionalCount(stdout, "enhanced roughcut", summary.EnhancedRoughcutCount)
 	printOptionalCount(stdout, "selected clips", summary.SelectedClipCount)
+	if summary.SelectedClipSource != "" {
+		fmt.Fprintf(stdout, "    %-20s %s\n", "selected source:", summary.SelectedClipSource)
+	}
 	fmt.Fprintf(stdout, "    exported files:      %d\n", summary.ExportedFileCount)
 	if summary.ExportManifestSummary != nil {
 		fmt.Fprintf(stdout, "    export manifest:     planned=%d exported=%d validated=%d missing=%d\n",
