@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mirelahmd/byom-video/internal/commands"
 	"github.com/mirelahmd/byom-video/internal/config"
@@ -15,7 +16,7 @@ import (
 const usage = `byom-video is a local-first media/video workflow control plane.
 
 Usage:
-  byom-video doctor [--transcription]
+  byom-video doctor [--transcription] [--media]
   byom-video version
   byom-video init [--force]
   byom-video config show [--json]
@@ -38,7 +39,7 @@ Usage:
   byom-video creative-timeline <creative_plan_id> [--run-id <run_id>] [--overwrite] [--json] [--prefer-goal]
   byom-video creative-render-plan <creative_plan_id> [--overwrite] [--json]
   byom-video review-creative-timeline <creative_plan_id> [--json] [--write-artifact]
-  byom-video creative-assemble <creative_plan_id> [--overwrite] [--json] [--mode <reencode|stream-copy>] [--keep-work] [--dry-run] [--max-clips <n>] [--burn-captions] [--captions <path>] [--allow-missing-captions] [--mix-voiceover] [--voiceover <path>] [--allow-missing-voiceover]
+  byom-video creative-assemble <creative_plan_id> [--overwrite] [--json] [--mode <reencode|stream-copy>] [--keep-work] [--dry-run] [--max-clips <n>] [--burn-captions] [--captions <path>] [--allow-missing-captions] [--mix-voiceover] [--voiceover <path>] [--allow-missing-voiceover] [--platform <preset>] [--fit <crop|pad>] [--background <color>] [--caption-position <bottom|center|top|auto>] [--caption-margin <n>] [--caption-style <default|bold|boxed>]
   byom-video validate-creative-assemble <creative_plan_id> [--json]
   byom-video review-creative-assemble <creative_plan_id> [--json] [--write-artifact]
   byom-video creative-result <creative_plan_id> [--json] [--write-artifact]
@@ -108,6 +109,64 @@ Usage:
   byom-video review-expansions <run_id> [--json] [--write-artifact]
   byom-video verify-expansions <run_id> [--json] [--tolerance-seconds <n>]
   byom-video review-verification <run_id> [--json] [--write-artifact]
+  byom-video style init [--force] [--style-dir <path>] [--json]
+  byom-video style inspect [--style-dir <path>] [--json]
+  byom-video style validate [--style-dir <path>] [--strict] [--json]
+  byom-video creative-generate-script <creative_plan_id> [--overwrite] [--json] [--style-dir <path>] [--no-style] [--route <name>] [--model <name>] [--fallback-stub] [--max-words <n>] [--tone <text>]
+  byom-video review-script <creative_plan_id> [--json] [--write-artifact]
+  byom-video creative-caption-variants <creative_plan_id> [--overwrite] [--json] [--style-dir <path>] [--no-style] [--route <name>] [--model <name>] [--fallback-stub] [--count <n>] [--max-words <n>] [--tone <text>]
+  byom-video review-caption-variants <creative_plan_id> [--json] [--write-artifact]
+  byom-video creative-voiceover-text <creative_plan_id> [--overwrite] [--json] [--max-words <n>] [--tone <text>] [--source <auto|script|goal>]
+  byom-video voiceover-status <creative_plan_id> [--json]
+  byom-video review-voiceover <creative_plan_id> [--json] [--write-artifact]
+  byom-video validate-voiceover <creative_plan_id> [--json] [--require-audio]
+  byom-video creative-generate-voiceover <creative_plan_id> [--overwrite] [--json] [--dry-run] [--check-env] [--prepare-text] [--route <name>] [--backend <name>] [--voice-id <id>] [--model <model>] [--timeout-seconds <n>] [--text <text>] [--stability <0.0-1.0>] [--similarity-boost <0.0-1.0>] [--output-format <format>]
+  byom-video review-generated-voiceover <creative_plan_id> [--json] [--write-artifact]
+  byom-video make [<input-file>] --goal <text> [--yes] [--dry-run] [--preset <shorts|metadata>] [--skip-pipeline <run_id>] [--strict-input] [--export] [--require-export] [--generate-script] [--script-fallback-stub] [--style-dir <path>] [--no-style] [--script-route <name>] [--script-model <name>] [--script-max-words <n>] [--script-tone <text>] [--generate-captions] [--caption-fallback-stub] [--caption-count <n>] [--caption-max-words <n>] [--caption-tone <text>] [--prepare-voiceover] [--voiceover-max-words <n>] [--voiceover-tone <text>] [--require-voiceover] [--generate-voiceover] [--voiceover-route <name>] [--voiceover-backend <name>] [--voiceover-voice-id <id>] [--voiceover-timeout-seconds <n>] [--voiceover-dry-run] [--voiceover-check-env] [--allow-missing-generated-voiceover] [--voiceover-stability <0.0-1.0>] [--voiceover-similarity-boost <0.0-1.0>] [--voiceover-output-format <format>] [--platform <preset>] [--fit <crop|pad>] [--background <color>] [--caption-position <bottom|center|top|auto>] [--caption-margin <n>] [--caption-style <default|bold|boxed>] [--burn-captions] [--allow-missing-captions] [--mix-voiceover] [--voiceover <path>] [--allow-missing-voiceover] [--mode <reencode|stream-copy>] [--goal-aware] [--use-ollama-goal] [--keep-work] [--overwrite] [--json]
+  byom-video makes [--json]
+  byom-video inspect-make <make_id> [--json]
+  byom-video make-result <make_id> [--json] [--write-artifact]
+  byom-video revise-make <make_id> --request <text> [--dry-run] [--json] [--yes] [--overwrite] [--reassemble] [--validate] [--allow-provider-calls] [--fallback-stub]
+  byom-video make-revisions <make_id> [--json]
+  byom-video inspect-make-revision <make_id> <revision_id> [--json]
+  byom-video review-make-revision <make_id> <revision_id> [--json] [--write-artifact]
+  byom-video job-create --type <make|revise_make|validate_creative_assemble> [--goal <text>] [--preset <name>] [--make-id <id>] [--request <text>] [--reassemble] [--plan-id <id>] [--allow-provider-calls] [--allow-overwrite] [--allow-external-network] [--json]
+  byom-video jobs [--json] [--filter <status>] [--limit <n>]
+  byom-video job-inspect <job_id> [--json]
+  byom-video job-events <job_id> [--json] [--limit <n>]
+  byom-video job-approve <job_id> [--json]
+  byom-video job-reject <job_id> [--reason <text>] [--json]
+  byom-video job-cancel <job_id> [--reason <text>] [--json]
+  byom-video job-run <job_id> [--yes] [--json]
+  byom-video job-result <job_id> [--json]
+  byom-video job-validate <job_id> [--json]
+  byom-video job-worker [--once | --loop | --status] [--interval <duration>] [--max-jobs <n>] [--json] [--dry-run] [--allow-provider-calls] [--allow-overwrite] [--fail-fast] [--force-lock]
+  byom-video daemon start [--interval <duration>] [--max-jobs <n>] [--allow-provider-calls] [--allow-overwrite] [--fail-fast] [--force] [--reset-log] [--json]
+  byom-video daemon stop [--force] [--json]
+  byom-video daemon status [--json]
+  byom-video daemon logs [--lines <n>] [--json]
+  byom-video queue [--json] [--limit <n>] [--failed] [--approval-needed] [--running]
+  byom-video queue health [--json] [--strict] [--stale-after <duration>] [--write-report]
+  byom-video agent-planner-diagnose [--planner <deterministic|ollama>] [--planner-model <name>] [--planner-backend <url>] [--planner-route <key>] [--planner-timeout-seconds <n>] [--check] [--json]
+  byom-video agent-plan --goal <text> [--input <video_path>] [--make-id <make_id>] [--creative-plan-id <plan_id>] [--run-id <run_id>] [--json] [--write-review] [--allow-provider-calls] [--allow-overwrite] [--platform <preset>] [--style-dir <path>] [--dry-run] [--planner <deterministic|ollama>] [--planner-model <name>] [--planner-backend <url>] [--planner-route <key>] [--planner-fallback-deterministic] [--planner-timeout-seconds <n>] [--planner-temperature <float>] [--planner-max-output-chars <n>]
+  byom-video agent-plans [--json] [--status <status>] [--limit <n>]
+  byom-video inspect-agent-plan <plan_id> [--json]
+  byom-video review-agent-plan <plan_id> [--json] [--write-artifact]
+  byom-video agent-policy <plan_id> [--json]
+  byom-video approve-agent-plan <plan_id> [--json]
+  byom-video reject-agent-plan <plan_id> [--reason <text>] [--json]
+  byom-video agent-plan-to-job <plan_id> [--dry-run] [--yes] [--json] [--allow-provider-calls] [--allow-overwrite] [--approve-jobs] [--force]
+  byom-video agent-plan-jobs <plan_id> [--json]
+  byom-video agent-run <plan_id> [--yes] [--convert] [--approve-jobs] [--run-jobs | --worker-once | --start-daemon] [--dry-run] [--json] [--allow-provider-calls] [--allow-overwrite] [--force] [--fail-fast] [--write-summary]
+  byom-video agent-graph-run <plan_id> [--json] [--dry-run] [--workers-dir <path>]
+  byom-video agent-orchestrate --goal <text> [--input <video_path>] [--json] [--skip-graph] [--workers-dir <path>]
+  byom-video visual-requests <agent_plan_id> [--json] [--overwrite]
+  byom-video execute-visual-requests <agent_plan_id> --yes --allow-provider-calls --allow-external-network [--json] [--overwrite] [--request-id <id>]
+  byom-video review-visual-generation <agent_plan_id> [--json] [--write-artifact]
+  byom-video create [<input>] --goal <text> [--json] [--dry-run] [--write-review] [--yes] [--approval-scope <preview|local|provider|full>] [--convert] [--approve-jobs] [--run-jobs | --worker-once | --start-daemon]
+  byom-video create-result <create_session_id> [--json] [--write-artifact]
+  byom-video create-sessions [--json] [--status <status>] [--limit <n>]
+  byom-video inspect-create-session <create_session_id> [--json]
   byom-video export <run_id>
   byom-video open-report <run_id> [--open]
 `
@@ -464,6 +523,700 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		if err := commands.Run(inputFile, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "style":
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "error: style requires a subcommand: init, inspect, validate")
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		switch args[1] {
+		case "init":
+			opts, err := parseStyleInitArgs(args[2:])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				fmt.Fprint(stderr, usage)
+				return 2
+			}
+			if err := commands.StyleInit(stdout, opts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+			return 0
+		case "inspect":
+			opts, err := parseStyleInspectArgs(args[2:])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				fmt.Fprint(stderr, usage)
+				return 2
+			}
+			if err := commands.StyleInspect(stdout, opts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+			return 0
+		case "validate":
+			opts, err := parseStyleValidateArgs(args[2:])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				fmt.Fprint(stderr, usage)
+				return 2
+			}
+			if err := commands.StyleValidate(stdout, opts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+			return 0
+		default:
+			fmt.Fprintf(stderr, "error: unknown style subcommand %q; supported: init, inspect, validate\n", args[1])
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+	case "creative-generate-script":
+		planID, opts, err := parseCreativeGenerateScriptArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeGenerateScript(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-script":
+		planID, opts, err := parseReviewScriptArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewScript(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-caption-variants":
+		planID, opts, err := parseCaptionVariantsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CaptionVariants(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-voiceover-text":
+		planID, opts, err := parseVoiceoverTextArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.VoiceoverTextCommand(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "voiceover-status":
+		planID, opts, err := parseVoiceoverStatusArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.VoiceoverStatus(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-voiceover":
+		planID, opts, err := parseReviewVoiceoverArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewVoiceover(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "validate-voiceover":
+		planID, opts, err := parseValidateVoiceoverArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ValidateVoiceover(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-generate-voiceover":
+		planID, opts, err := parseGenerateVoiceoverArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.GenerateVoiceover(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-generated-voiceover":
+		planID, opts, err := parseReviewGeneratedVoiceoverArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewGeneratedVoiceover(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-caption-variants":
+		planID, opts, err := parseReviewCaptionVariantsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewCaptionVariants(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "make":
+		inputFile, opts, err := parseMakeArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Make(inputFile, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "makes":
+		opts, err := parseMakesArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Makes(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "inspect-make":
+		makeID, opts, err := parseInspectMakeArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.InspectMake(makeID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "make-result":
+		makeID, opts, err := parseMakeResultArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.MakeResult(makeID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "revise-make":
+		makeID, opts, err := parseReviseMakeArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviseMake(makeID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "make-revisions":
+		makeID, opts, err := parseMakeRevisionsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.MakeRevisions(makeID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "inspect-make-revision":
+		makeID, revisionID, opts, err := parseInspectMakeRevisionArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.InspectMakeRevision(makeID, revisionID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-make-revision":
+		makeID, revisionID, opts, err := parseReviewMakeRevisionArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewMakeRevision(makeID, revisionID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-create":
+		opts, err := parseJobCreateArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobCreate(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "jobs":
+		opts, err := parseJobsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Jobs(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-inspect":
+		jobID, opts, err := parseJobInspectArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobInspect(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-events":
+		jobID, opts, err := parseJobEventsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobEvents(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-approve":
+		jobID, opts, err := parseJobApproveArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobApprove(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-reject":
+		jobID, opts, err := parseJobRejectArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobReject(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-cancel":
+		jobID, opts, err := parseJobCancelArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobCancel(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-run":
+		jobID, opts, err := parseJobRunArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobRun(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-result":
+		jobID, opts, err := parseJobResultArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobResult(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-validate":
+		jobID, opts, err := parseJobValidateArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobValidate(jobID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "job-worker":
+		opts, err := parseJobWorkerArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.JobWorker(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "daemon":
+		subcommand, startOpts, stopOpts, statusOpts, logsOpts, err := parseDaemonArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		switch subcommand {
+		case "start":
+			if err := commands.DaemonStart(stdout, startOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "stop":
+			if err := commands.DaemonStop(stdout, stopOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "status":
+			if err := commands.DaemonStatus(stdout, statusOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "logs":
+			if err := commands.DaemonLogs(stdout, logsOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		default:
+			fmt.Fprintf(stderr, "error: unknown daemon subcommand %q\n", subcommand)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		return 0
+	case "queue":
+		subcommand, queueOpts, healthOpts, err := parseQueueArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		switch subcommand {
+		case "queue":
+			if err := commands.Queue(stdout, queueOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		case "health":
+			if err := commands.QueueHealth(stdout, healthOpts); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 1
+			}
+		default:
+			fmt.Fprintf(stderr, "error: unknown queue subcommand %q\n", subcommand)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		return 0
+	case "agent-planner-diagnose":
+		opts, err := parsePlannerDiagnoseArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPlannerDiagnoseCommand(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-plan":
+		opts, err := parseAgentPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPlanCommand(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-plans":
+		opts, err := parseAgentPlansArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPlans(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "inspect-agent-plan":
+		planID, opts, err := parseInspectAgentPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.InspectAgentPlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-agent-plan":
+		planID, opts, err := parseReviewAgentPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewAgentPlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-policy":
+		planID, opts, err := parseAgentPolicyArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPolicy(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "approve-agent-plan":
+		planID, opts, err := parseApproveAgentPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ApproveAgentPlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "reject-agent-plan":
+		planID, opts, err := parseRejectAgentPlanArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.RejectAgentPlan(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-plan-to-job":
+		planID, opts, err := parseAgentPlanToJobArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPlanToJob(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-plan-jobs":
+		planID, opts, err := parseAgentPlanJobsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentPlanJobs(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-run":
+		planID, opts, err := parseAgentRunArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentRun(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-graph-run":
+		planID, opts, err := parseAgentGraphRunArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentGraphRunCommand(stdout, planID, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "agent-orchestrate":
+		opts, err := parseAgentOrchestrateArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.AgentOrchestrate(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "visual-requests":
+		planID, opts, err := parseVisualRequestsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.VisualRequests(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "execute-visual-requests":
+		planID, opts, err := parseExecuteVisualRequestsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ExecuteVisualRequests(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "review-visual-generation":
+		planID, opts, err := parseReviewVisualGenerationArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.ReviewVisualGeneration(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "create":
+		opts, err := parseCreateArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Create(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "create-result":
+		sessionID, opts, err := parseCreateResultArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreateResult(sessionID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "create-sessions":
+		opts, err := parseCreateSessionsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreateSessions(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "inspect-create-session":
+		sessionID, opts, err := parseInspectCreateSessionArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.InspectCreateSession(sessionID, stdout, opts); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -2093,6 +2846,62 @@ func parseCreativeAssembleArgs(args []string) (string, commands.CreativeAssemble
 			opts.RunID = args[i]
 		case strings.HasPrefix(arg, "--run-id="):
 			opts.RunID = strings.TrimPrefix(arg, "--run-id=")
+		case arg == "--platform":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--platform requires a value")
+			}
+			i++
+			opts.Platform = args[i]
+		case strings.HasPrefix(arg, "--platform="):
+			opts.Platform = strings.TrimPrefix(arg, "--platform=")
+		case arg == "--fit":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--fit requires a value")
+			}
+			i++
+			opts.Fit = args[i]
+		case strings.HasPrefix(arg, "--fit="):
+			opts.Fit = strings.TrimPrefix(arg, "--fit=")
+		case arg == "--background":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--background requires a value")
+			}
+			i++
+			opts.Background = args[i]
+		case strings.HasPrefix(arg, "--background="):
+			opts.Background = strings.TrimPrefix(arg, "--background=")
+		case arg == "--caption-position":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--caption-position requires a value")
+			}
+			i++
+			opts.CaptionPosition = args[i]
+		case strings.HasPrefix(arg, "--caption-position="):
+			opts.CaptionPosition = strings.TrimPrefix(arg, "--caption-position=")
+		case arg == "--caption-margin":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--caption-margin requires a value")
+			}
+			i++
+			n, err := parseIntFlag("--caption-margin", args[i])
+			if err != nil {
+				return "", opts, err
+			}
+			opts.CaptionMargin = n
+		case strings.HasPrefix(arg, "--caption-margin="):
+			n, err := parseIntFlag("--caption-margin", strings.TrimPrefix(arg, "--caption-margin="))
+			if err != nil {
+				return "", opts, err
+			}
+			opts.CaptionMargin = n
+		case arg == "--caption-style":
+			if i+1 >= len(args) {
+				return "", opts, errors.New("--caption-style requires a value")
+			}
+			i++
+			opts.CaptionStyle = args[i]
+		case strings.HasPrefix(arg, "--caption-style="):
+			opts.CaptionStyle = strings.TrimPrefix(arg, "--caption-style=")
 		case len(arg) > 0 && arg[0] == '-':
 			return "", opts, fmt.Errorf("unknown creative-assemble flag %q", arg)
 		default:
@@ -2993,6 +3802,382 @@ func parsePipelineArgs(args []string) (string, commands.RunOptions, error) {
 		return "", commands.RunOptions{}, err
 	}
 	return parseRunArgsWithBase(forwarded, base)
+}
+
+func parseMakeArgs(args []string) (string, commands.MakeOptions, error) {
+	opts := commands.MakeOptions{VoiceoverStability: -1, VoiceoverSimilarityBoost: -1}
+	inputFile := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--goal":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--goal requires a value")
+			}
+			index++
+			opts.Goal = args[index]
+		case "--preset":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--preset requires a value")
+			}
+			index++
+			opts.Preset = args[index]
+		case "--skip-pipeline":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--skip-pipeline requires a run_id value")
+			}
+			index++
+			opts.SkipPipeline = args[index]
+		case "--strict-input":
+			opts.StrictInput = true
+		case "--export":
+			opts.Export = true
+		case "--require-export":
+			opts.RequireExport = true
+		case "--yes":
+			opts.Yes = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--burn-captions":
+			opts.BurnCaptions = true
+		case "--allow-missing-captions":
+			opts.AllowMissingCaptions = true
+		case "--mix-voiceover":
+			opts.MixVoiceover = true
+		case "--voiceover":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover requires a value")
+			}
+			index++
+			opts.VoiceoverPath = args[index]
+		case "--allow-missing-voiceover":
+			opts.AllowMissingVoiceover = true
+		case "--mode":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--mode requires a value")
+			}
+			index++
+			opts.Mode = args[index]
+		case "--goal-aware":
+			opts.GoalAware = true
+		case "--use-ollama-goal":
+			opts.UseOllamaGoal = true
+		case "--generate-script":
+			opts.GenerateScript = true
+		case "--script-fallback-stub":
+			opts.ScriptFallbackStub = true
+		case "--no-style":
+			opts.ScriptNoStyle = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.ScriptStyleDir = args[index]
+		case "--script-route":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--script-route requires a value")
+			}
+			index++
+			opts.ScriptRoute = args[index]
+		case "--script-model":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--script-model requires a value")
+			}
+			index++
+			opts.ScriptModelEntry = args[index]
+		case "--script-max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--script-max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--script-max-words must be an integer")
+			}
+			opts.ScriptMaxWords = n
+		case "--script-tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--script-tone requires a value")
+			}
+			index++
+			opts.ScriptTone = args[index]
+		case "--prepare-voiceover":
+			opts.PrepareVoiceover = true
+		case "--require-voiceover":
+			opts.RequireVoiceover = true
+		case "--voiceover-max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--voiceover-max-words must be an integer")
+			}
+			opts.VoiceoverMaxWords = n
+		case "--voiceover-tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-tone requires a value")
+			}
+			index++
+			opts.VoiceoverTone = args[index]
+		case "--generate-voiceover":
+			opts.GenerateVoiceover = true
+		case "--voiceover-route":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-route requires a value")
+			}
+			index++
+			opts.VoiceoverRoute = args[index]
+		case "--voiceover-backend":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-backend requires a value")
+			}
+			index++
+			opts.VoiceoverBackend = args[index]
+		case "--voiceover-voice-id":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-voice-id requires a value")
+			}
+			index++
+			opts.VoiceoverVoiceID = args[index]
+		case "--voiceover-timeout-seconds":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-timeout-seconds requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--voiceover-timeout-seconds must be an integer")
+			}
+			opts.VoiceoverTimeoutSeconds = n
+		case "--voiceover-dry-run":
+			opts.VoiceoverDryRun = true
+		case "--voiceover-check-env":
+			opts.VoiceoverCheckEnv = true
+		case "--allow-missing-generated-voiceover":
+			opts.AllowMissingGeneratedVoiceover = true
+		case "--platform":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--platform requires a value")
+			}
+			index++
+			opts.Platform = args[index]
+		case "--fit":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--fit requires a value")
+			}
+			index++
+			opts.Fit = args[index]
+		case "--background":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--background requires a value")
+			}
+			index++
+			opts.Background = args[index]
+		case "--generate-captions":
+			opts.GenerateCaptions = true
+		case "--caption-fallback-stub":
+			opts.CaptionFallbackStub = true
+		case "--caption-count":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-count requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--caption-count must be an integer")
+			}
+			opts.CaptionCount = n
+		case "--caption-max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--caption-max-words must be an integer")
+			}
+			opts.CaptionMaxWords = n
+		case "--caption-tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-tone requires a value")
+			}
+			index++
+			opts.CaptionTone = args[index]
+		case "--caption-position":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-position requires a value")
+			}
+			index++
+			opts.CaptionPosition = args[index]
+		case "--caption-margin":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-margin requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--caption-margin must be an integer")
+			}
+			opts.CaptionMargin = n
+		case "--caption-style":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--caption-style requires a value")
+			}
+			index++
+			opts.CaptionStyle = args[index]
+		case "--voiceover-stability":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-stability requires a value")
+			}
+			index++
+			v, err := strconv.ParseFloat(args[index], 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--voiceover-stability must be a float between 0.0 and 1.0")
+			}
+			opts.VoiceoverStability = v
+		case "--voiceover-similarity-boost":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-similarity-boost requires a value")
+			}
+			index++
+			v, err := strconv.ParseFloat(args[index], 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--voiceover-similarity-boost must be a float between 0.0 and 1.0")
+			}
+			opts.VoiceoverSimilarityBoost = v
+		case "--voiceover-output-format":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--voiceover-output-format requires a value")
+			}
+			index++
+			opts.VoiceoverOutputFormat = args[index]
+		case "--keep-work":
+			opts.KeepWork = true
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if value, ok := strings.CutPrefix(arg, "--goal="); ok {
+				opts.Goal = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--preset="); ok {
+				opts.Preset = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--skip-pipeline="); ok {
+				opts.SkipPipeline = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--mode="); ok {
+				opts.Mode = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--voiceover="); ok {
+				opts.VoiceoverPath = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.ScriptStyleDir = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--script-route="); ok {
+				opts.ScriptRoute = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--script-model="); ok {
+				opts.ScriptModelEntry = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--script-tone="); ok {
+				opts.ScriptTone = value
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for make", arg)
+			}
+			if inputFile != "" {
+				return "", opts, errors.New("make: unexpected extra argument")
+			}
+			inputFile = arg
+		}
+	}
+	// input file is optional when --skip-pipeline is set
+	if inputFile == "" && opts.SkipPipeline == "" && !opts.DryRun {
+		return "", opts, errors.New("make requires an input file argument (or --skip-pipeline <run_id>)")
+	}
+	// inherit python interpreter from env/config
+	if opts.PythonInterpreter == "" {
+		if p := os.Getenv("BYOM_VIDEO_PYTHON"); p != "" {
+			opts.PythonInterpreter = p
+		}
+	}
+	return inputFile, opts, nil
+}
+
+func parseMakeResultArgs(args []string) (string, commands.MakeResultOptions, error) {
+	opts := commands.MakeResultOptions{}
+	makeID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for make-result", arg)
+			}
+			if makeID != "" {
+				return "", opts, errors.New("make-result: unexpected extra argument")
+			}
+			makeID = arg
+		}
+	}
+	if makeID == "" {
+		return "", opts, errors.New("make-result requires a make_id argument")
+	}
+	return makeID, opts, nil
+}
+
+func parseMakesArgs(args []string) (commands.MakesOptions, error) {
+	opts := commands.MakesOptions{}
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			return opts, fmt.Errorf("unknown flag %q for makes", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseInspectMakeArgs(args []string) (string, commands.InspectMakeOptions, error) {
+	opts := commands.InspectMakeOptions{}
+	makeID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for inspect-make", arg)
+			}
+			if makeID != "" {
+				return "", opts, errors.New("inspect-make: unexpected extra argument")
+			}
+			makeID = arg
+		}
+	}
+	if makeID == "" {
+		return "", opts, errors.New("inspect-make requires a make_id argument")
+	}
+	return makeID, opts, nil
 }
 
 func parseBatchArgs(args []string) (string, commands.BatchOptions, error) {
@@ -4422,8 +5607,2113 @@ func parseDoctorArgs(args []string) (commands.DoctorOptions, error) {
 		switch a {
 		case "--transcription":
 			opts.Transcription = true
+		case "--media":
+			opts.Media = true
 		default:
 			return opts, fmt.Errorf("unknown flag %q for doctor", a)
+		}
+	}
+	return opts, nil
+}
+
+// ---- style parse functions ----
+
+func parseStyleInitArgs(args []string) (commands.StyleInitOptions, error) {
+	opts := commands.StyleInitOptions{}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--force":
+			opts.Force = true
+		case "--json":
+			opts.JSON = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.StyleDir = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.StyleDir = value
+				continue
+			}
+			return opts, fmt.Errorf("unknown flag %q for style init", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseStyleInspectArgs(args []string) (commands.StyleInspectOptions, error) {
+	opts := commands.StyleInspectOptions{}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.StyleDir = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.StyleDir = value
+				continue
+			}
+			return opts, fmt.Errorf("unknown flag %q for style inspect", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseStyleValidateArgs(args []string) (commands.StyleValidateOptions, error) {
+	opts := commands.StyleValidateOptions{}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--strict":
+			opts.Strict = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.StyleDir = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.StyleDir = value
+				continue
+			}
+			return opts, fmt.Errorf("unknown flag %q for style validate", arg)
+		}
+	}
+	return opts, nil
+}
+
+// ---- creative-generate-script parse functions ----
+
+func parseCreativeGenerateScriptArgs(args []string) (string, commands.CreativeGenerateScriptOptions, error) {
+	opts := commands.CreativeGenerateScriptOptions{}
+	planID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		case "--no-style":
+			opts.NoStyle = true
+		case "--fallback-stub":
+			opts.FallbackStub = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.StyleDir = args[index]
+		case "--route":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--route requires a value")
+			}
+			index++
+			opts.Route = args[index]
+		case "--model":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--model requires a value")
+			}
+			index++
+			opts.ModelEntry = args[index]
+		case "--max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--max-words must be an integer")
+			}
+			opts.MaxWords = n
+		case "--tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--tone requires a value")
+			}
+			index++
+			opts.Tone = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.StyleDir = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--route="); ok {
+				opts.Route = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--model="); ok {
+				opts.ModelEntry = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--tone="); ok {
+				opts.Tone = value
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for creative-generate-script", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-generate-script: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-generate-script requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- review-script parse functions ----
+
+func parseReviewScriptArgs(args []string) (string, commands.ReviewScriptOptions, error) {
+	opts := commands.ReviewScriptOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for review-script", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-script: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-script requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- creative-caption-variants parse functions ----
+
+func parseCaptionVariantsArgs(args []string) (string, commands.CaptionVariantsOptions, error) {
+	opts := commands.CaptionVariantsOptions{}
+	planID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		case "--no-style":
+			opts.NoStyle = true
+		case "--fallback-stub":
+			opts.FallbackStub = true
+		case "--style-dir":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--style-dir requires a value")
+			}
+			index++
+			opts.StyleDir = args[index]
+		case "--route":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--route requires a value")
+			}
+			index++
+			opts.Route = args[index]
+		case "--model":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--model requires a value")
+			}
+			index++
+			opts.ModelEntry = args[index]
+		case "--count":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--count requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--count must be an integer")
+			}
+			opts.Count = n
+		case "--max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--max-words must be an integer")
+			}
+			opts.MaxWords = n
+		case "--tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--tone requires a value")
+			}
+			index++
+			opts.Tone = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--style-dir="); ok {
+				opts.StyleDir = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--route="); ok {
+				opts.Route = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--model="); ok {
+				opts.ModelEntry = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--tone="); ok {
+				opts.Tone = value
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for creative-caption-variants", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-caption-variants: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-caption-variants requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewCaptionVariantsArgs(args []string) (string, commands.ReviewCaptionVariantsOptions, error) {
+	opts := commands.ReviewCaptionVariantsOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for review-caption-variants", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-caption-variants: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-caption-variants requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- creative-voiceover-text parse ----
+
+func parseVoiceoverTextArgs(args []string) (string, commands.VoiceoverTextOptions, error) {
+	opts := commands.VoiceoverTextOptions{}
+	planID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--json":
+			opts.JSON = true
+		case "--max-words":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--max-words requires a value")
+			}
+			index++
+			n, err := strconv.Atoi(args[index])
+			if err != nil {
+				return "", opts, fmt.Errorf("--max-words must be an integer")
+			}
+			opts.MaxWords = n
+		case "--tone":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--tone requires a value")
+			}
+			index++
+			opts.Tone = args[index]
+		case "--source":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--source requires a value")
+			}
+			index++
+			opts.Source = args[index]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--tone="); ok {
+				opts.Tone = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--source="); ok {
+				opts.Source = value
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for creative-voiceover-text", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-voiceover-text: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-voiceover-text requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- voiceover-status parse ----
+
+func parseVoiceoverStatusArgs(args []string) (string, commands.VoiceoverStatusOptions, error) {
+	opts := commands.VoiceoverStatusOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for voiceover-status", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("voiceover-status: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("voiceover-status requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- review-voiceover parse ----
+
+func parseReviewVoiceoverArgs(args []string) (string, commands.ReviewVoiceoverOptions, error) {
+	opts := commands.ReviewVoiceoverOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for review-voiceover", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-voiceover: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-voiceover requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+// ---- validate-voiceover parse ----
+
+func parseValidateVoiceoverArgs(args []string) (string, commands.ValidateVoiceoverOptions, error) {
+	opts := commands.ValidateVoiceoverOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--require-audio":
+			opts.RequireAudio = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for validate-voiceover", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("validate-voiceover: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("validate-voiceover requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+func parseGenerateVoiceoverArgs(args []string) (string, commands.GenerateVoiceoverOptions, error) {
+	opts := commands.GenerateVoiceoverOptions{Stability: -1, SimilarityBoost: -1}
+	planID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--json":
+			opts.JSON = true
+		case arg == "--overwrite":
+			opts.Overwrite = true
+		case arg == "--dry-run":
+			opts.DryRun = true
+		case arg == "--check-env":
+			opts.CheckEnv = true
+		case arg == "--prepare-text":
+			opts.PrepareText = true
+		case arg == "--route":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--route requires a value")
+			}
+			opts.Route = args[i]
+		case strings.HasPrefix(arg, "--route="):
+			opts.Route = strings.TrimPrefix(arg, "--route=")
+		case arg == "--backend":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--backend requires a value")
+			}
+			opts.Backend = args[i]
+		case strings.HasPrefix(arg, "--backend="):
+			opts.Backend = strings.TrimPrefix(arg, "--backend=")
+		case arg == "--voice-id":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--voice-id requires a value")
+			}
+			opts.VoiceID = args[i]
+		case strings.HasPrefix(arg, "--voice-id="):
+			opts.VoiceID = strings.TrimPrefix(arg, "--voice-id=")
+		case arg == "--model":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--model requires a value")
+			}
+			opts.Model = args[i]
+		case strings.HasPrefix(arg, "--model="):
+			opts.Model = strings.TrimPrefix(arg, "--model=")
+		case arg == "--timeout-seconds":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--timeout-seconds requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return "", opts, fmt.Errorf("--timeout-seconds must be an integer")
+			}
+			opts.TimeoutSeconds = n
+		case arg == "--text":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--text requires a value")
+			}
+			opts.Text = args[i]
+		case strings.HasPrefix(arg, "--text="):
+			opts.Text = strings.TrimPrefix(arg, "--text=")
+		case arg == "--stability":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--stability requires a value")
+			}
+			v, err := strconv.ParseFloat(args[i], 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--stability must be a float between 0.0 and 1.0")
+			}
+			opts.Stability = v
+		case strings.HasPrefix(arg, "--stability="):
+			v, err := strconv.ParseFloat(strings.TrimPrefix(arg, "--stability="), 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--stability must be a float between 0.0 and 1.0")
+			}
+			opts.Stability = v
+		case arg == "--similarity-boost":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--similarity-boost requires a value")
+			}
+			v, err := strconv.ParseFloat(args[i], 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--similarity-boost must be a float between 0.0 and 1.0")
+			}
+			opts.SimilarityBoost = v
+		case strings.HasPrefix(arg, "--similarity-boost="):
+			v, err := strconv.ParseFloat(strings.TrimPrefix(arg, "--similarity-boost="), 64)
+			if err != nil || v < 0 || v > 1 {
+				return "", opts, fmt.Errorf("--similarity-boost must be a float between 0.0 and 1.0")
+			}
+			opts.SimilarityBoost = v
+		case arg == "--output-format":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--output-format requires a value")
+			}
+			opts.OutputFormat = args[i]
+		case strings.HasPrefix(arg, "--output-format="):
+			opts.OutputFormat = strings.TrimPrefix(arg, "--output-format=")
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for creative-generate-voiceover", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("creative-generate-voiceover: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("creative-generate-voiceover requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewGeneratedVoiceoverArgs(args []string) (string, commands.ReviewGeneratedVoiceoverOptions, error) {
+	opts := commands.ReviewGeneratedVoiceoverOptions{}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for review-generated-voiceover", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-generated-voiceover: unexpected extra argument")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-generated-voiceover requires a creative_plan_id argument")
+	}
+	return planID, opts, nil
+}
+
+func parseReviseMakeArgs(args []string) (string, commands.ReviseMakeOptions, error) {
+	opts := commands.ReviseMakeOptions{}
+	makeID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--request":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--request requires a value")
+			}
+			opts.Request = args[i]
+		case strings.HasPrefix(arg, "--request="):
+			opts.Request = strings.TrimPrefix(arg, "--request=")
+		case arg == "--dry-run":
+			opts.DryRun = true
+		case arg == "--json":
+			opts.JSON = true
+		case arg == "--yes":
+			opts.Yes = true
+		case arg == "--overwrite":
+			opts.Overwrite = true
+		case arg == "--new-make":
+			opts.NewMake = true
+		case arg == "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case arg == "--fallback-stub":
+			opts.FallbackStub = true
+		case arg == "--reassemble":
+			opts.Reassemble = true
+		case arg == "--validate":
+			opts.Validate = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for revise-make", arg)
+			}
+			if makeID != "" {
+				return "", opts, errors.New("revise-make: unexpected extra argument")
+			}
+			makeID = arg
+		}
+	}
+	if makeID == "" {
+		return "", opts, errors.New("revise-make requires a make_id argument")
+	}
+	return makeID, opts, nil
+}
+
+func parseMakeRevisionsArgs(args []string) (string, commands.MakeRevisionsOptions, error) {
+	opts := commands.MakeRevisionsOptions{}
+	makeID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for make-revisions", arg)
+			}
+			if makeID != "" {
+				return "", opts, errors.New("make-revisions: unexpected extra argument")
+			}
+			makeID = arg
+		}
+	}
+	if makeID == "" {
+		return "", opts, errors.New("make-revisions requires a make_id argument")
+	}
+	return makeID, opts, nil
+}
+
+func parseInspectMakeRevisionArgs(args []string) (string, string, commands.InspectMakeRevisionOptions, error) {
+	opts := commands.InspectMakeRevisionOptions{}
+	makeID := ""
+	revisionID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", "", opts, fmt.Errorf("unknown flag %q for inspect-make-revision", arg)
+			}
+			if makeID == "" {
+				makeID = arg
+			} else if revisionID == "" {
+				revisionID = arg
+			} else {
+				return "", "", opts, errors.New("inspect-make-revision: unexpected extra argument")
+			}
+		}
+	}
+	if makeID == "" {
+		return "", "", opts, errors.New("inspect-make-revision requires a make_id argument")
+	}
+	if revisionID == "" {
+		return "", "", opts, errors.New("inspect-make-revision requires a revision_id argument")
+	}
+	return makeID, revisionID, opts, nil
+}
+
+func parseReviewMakeRevisionArgs(args []string) (string, string, commands.ReviewMakeRevisionOptions, error) {
+	opts := commands.ReviewMakeRevisionOptions{}
+	makeID := ""
+	revisionID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", "", opts, fmt.Errorf("unknown flag %q for review-make-revision", arg)
+			}
+			if makeID == "" {
+				makeID = arg
+			} else if revisionID == "" {
+				revisionID = arg
+			} else {
+				return "", "", opts, errors.New("review-make-revision: unexpected extra argument")
+			}
+		}
+	}
+	if makeID == "" {
+		return "", "", opts, errors.New("review-make-revision requires a make_id argument")
+	}
+	if revisionID == "" {
+		return "", "", opts, errors.New("review-make-revision requires a revision_id argument")
+	}
+	return makeID, revisionID, opts, nil
+}
+
+func parseJobCreateArgs(args []string) (commands.JobCreateOptions, error) {
+	opts := commands.JobCreateOptions{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--type":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--type requires a value")
+			}
+			opts.ActionType = args[i]
+		case "--goal":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--goal requires a value")
+			}
+			opts.Goal = args[i]
+		case "--preset":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--preset requires a value")
+			}
+			opts.Preset = args[i]
+		case "--make-id":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--make-id requires a value")
+			}
+			opts.MakeID = args[i]
+		case "--request":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--request requires a value")
+			}
+			opts.Request = args[i]
+		case "--reassemble":
+			opts.Reassemble = true
+		case "--plan-id":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--plan-id requires a value")
+			}
+			opts.PlanID = args[i]
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--allow-external-network":
+			opts.AllowExternalNetwork = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return opts, fmt.Errorf("unknown flag %q for job-create", arg)
+			}
+			return opts, fmt.Errorf("job-create: unexpected positional argument %q; use --type to specify action type", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseJobsArgs(args []string) (commands.JobsOptions, error) {
+	opts := commands.JobsOptions{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--filter":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--filter requires a value")
+			}
+			opts.Filter = args[i]
+		case "--limit":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--limit requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("--limit: invalid number %q", args[i])
+			}
+			opts.Limit = n
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return opts, fmt.Errorf("unknown flag %q for jobs", arg)
+			}
+			return opts, fmt.Errorf("jobs: unexpected argument %q", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseJobInspectArgs(args []string) (string, commands.JobInspectOptions, error) {
+	opts := commands.JobInspectOptions{}
+	jobID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-inspect", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-inspect: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-inspect requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobEventsArgs(args []string) (string, commands.JobEventsOptions, error) {
+	opts := commands.JobEventsOptions{}
+	jobID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--limit":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--limit requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return "", opts, fmt.Errorf("--limit: invalid number %q", args[i])
+			}
+			opts.Limit = n
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-events", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-events: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-events requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobApproveArgs(args []string) (string, commands.JobApproveOptions, error) {
+	opts := commands.JobApproveOptions{}
+	jobID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-approve", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-approve: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-approve requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobRejectArgs(args []string) (string, commands.JobRejectOptions, error) {
+	opts := commands.JobRejectOptions{}
+	jobID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--reason":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--reason requires a value")
+			}
+			opts.Reason = args[i]
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-reject", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-reject: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-reject requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobCancelArgs(args []string) (string, commands.JobCancelOptions, error) {
+	opts := commands.JobCancelOptions{}
+	jobID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--reason":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--reason requires a value")
+			}
+			opts.Reason = args[i]
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-cancel", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-cancel: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-cancel requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobRunArgs(args []string) (string, commands.JobRunOptions, error) {
+	opts := commands.JobRunOptions{}
+	jobID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--yes":
+			opts.Yes = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-run", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-run: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-run requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobResultArgs(args []string) (string, commands.JobResultOptions, error) {
+	opts := commands.JobResultOptions{}
+	jobID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-result", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-result: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-result requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobValidateArgs(args []string) (string, commands.JobValidateOptions, error) {
+	opts := commands.JobValidateOptions{}
+	jobID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q for job-validate", arg)
+			}
+			if jobID != "" {
+				return "", opts, errors.New("job-validate: unexpected extra argument")
+			}
+			jobID = arg
+		}
+	}
+	if jobID == "" {
+		return "", opts, errors.New("job-validate requires a job_id argument")
+	}
+	return jobID, opts, nil
+}
+
+func parseJobWorkerArgs(args []string) (commands.JobWorkerOptions, error) {
+	opts := commands.JobWorkerOptions{Interval: 10 * time.Second}
+	maxJobsSet := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--once":
+			opts.Once = true
+		case "--loop":
+			opts.Loop = true
+		case "--status":
+			opts.Status = true
+		case "--json":
+			opts.JSON = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--fail-fast":
+			opts.FailFast = true
+		case "--force-lock":
+			opts.ForceLock = true
+		case "--interval":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--interval requires a value")
+			}
+			duration, err := time.ParseDuration(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("--interval: invalid duration %q", args[i])
+			}
+			opts.Interval = duration
+		case "--max-jobs":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--max-jobs requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("--max-jobs: invalid number %q", args[i])
+			}
+			opts.MaxJobs = n
+			maxJobsSet = true
+		default:
+			if value, ok := strings.CutPrefix(arg, "--interval="); ok {
+				duration, err := time.ParseDuration(value)
+				if err != nil {
+					return opts, fmt.Errorf("--interval: invalid duration %q", value)
+				}
+				opts.Interval = duration
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--max-jobs="); ok {
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return opts, fmt.Errorf("--max-jobs: invalid number %q", value)
+				}
+				opts.MaxJobs = n
+				maxJobsSet = true
+				continue
+			}
+			return opts, fmt.Errorf("unknown flag %q for job-worker", arg)
+		}
+	}
+	if !opts.Once && !opts.Loop && !opts.Status {
+		return opts, errors.New("job-worker requires --once, --loop, or --status")
+	}
+	if opts.Status && (opts.Once || opts.Loop) {
+		return opts, errors.New("--status cannot be combined with --once or --loop")
+	}
+	if opts.Interval <= 0 {
+		return opts, errors.New("--interval must be positive")
+	}
+	if maxJobsSet && opts.MaxJobs < 0 {
+		return opts, errors.New("--max-jobs must be zero or positive")
+	}
+	return opts, nil
+}
+
+func parseDaemonArgs(args []string) (string, commands.DaemonStartOptions, commands.DaemonStopOptions, commands.DaemonStatusOptions, commands.DaemonLogsOptions, error) {
+	var startOpts commands.DaemonStartOptions
+	var stopOpts commands.DaemonStopOptions
+	var statusOpts commands.DaemonStatusOptions
+	logsOpts := commands.DaemonLogsOptions{Lines: 80}
+	if len(args) == 0 {
+		return "", startOpts, stopOpts, statusOpts, logsOpts, errors.New("daemon requires subcommand: start, stop, status, or logs")
+	}
+	switch args[0] {
+	case "start":
+		startOpts.Interval = 10 * time.Second
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			switch arg {
+			case "--allow-provider-calls":
+				startOpts.AllowProviderCalls = true
+			case "--allow-overwrite":
+				startOpts.AllowOverwrite = true
+			case "--fail-fast":
+				startOpts.FailFast = true
+			case "--force":
+				startOpts.Force = true
+			case "--reset-log":
+				startOpts.ResetLog = true
+			case "--json":
+				startOpts.JSON = true
+			case "--interval":
+				i++
+				if i >= len(args) {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, errors.New("--interval requires a value")
+				}
+				duration, err := time.ParseDuration(args[i])
+				if err != nil {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--interval: invalid duration %q", args[i])
+				}
+				startOpts.Interval = duration
+			case "--max-jobs":
+				i++
+				if i >= len(args) {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, errors.New("--max-jobs requires a value")
+				}
+				n, err := strconv.Atoi(args[i])
+				if err != nil {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--max-jobs: invalid number %q", args[i])
+				}
+				startOpts.MaxJobs = n
+			default:
+				if value, ok := strings.CutPrefix(arg, "--interval="); ok {
+					duration, err := time.ParseDuration(value)
+					if err != nil {
+						return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--interval: invalid duration %q", value)
+					}
+					startOpts.Interval = duration
+					continue
+				}
+				if value, ok := strings.CutPrefix(arg, "--max-jobs="); ok {
+					n, err := strconv.Atoi(value)
+					if err != nil {
+						return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--max-jobs: invalid number %q", value)
+					}
+					startOpts.MaxJobs = n
+					continue
+				}
+				return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("unknown flag %q for daemon start", arg)
+			}
+		}
+		return "start", startOpts, stopOpts, statusOpts, logsOpts, nil
+	case "stop":
+		for _, arg := range args[1:] {
+			switch arg {
+			case "--force":
+				stopOpts.Force = true
+			case "--json":
+				stopOpts.JSON = true
+			default:
+				return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("unknown flag %q for daemon stop", arg)
+			}
+		}
+		return "stop", startOpts, stopOpts, statusOpts, logsOpts, nil
+	case "status":
+		for _, arg := range args[1:] {
+			switch arg {
+			case "--json":
+				statusOpts.JSON = true
+			default:
+				return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("unknown flag %q for daemon status", arg)
+			}
+		}
+		return "status", startOpts, stopOpts, statusOpts, logsOpts, nil
+	case "logs":
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			switch arg {
+			case "--json":
+				logsOpts.JSON = true
+			case "--lines":
+				i++
+				if i >= len(args) {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, errors.New("--lines requires a value")
+				}
+				n, err := strconv.Atoi(args[i])
+				if err != nil {
+					return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--lines: invalid number %q", args[i])
+				}
+				logsOpts.Lines = n
+			default:
+				if value, ok := strings.CutPrefix(arg, "--lines="); ok {
+					n, err := strconv.Atoi(value)
+					if err != nil {
+						return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("--lines: invalid number %q", value)
+					}
+					logsOpts.Lines = n
+					continue
+				}
+				return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("unknown flag %q for daemon logs", arg)
+			}
+		}
+		return "logs", startOpts, stopOpts, statusOpts, logsOpts, nil
+	default:
+		return "", startOpts, stopOpts, statusOpts, logsOpts, fmt.Errorf("unknown daemon subcommand %q", args[0])
+	}
+}
+
+func parseQueueArgs(args []string) (string, commands.QueueOptions, commands.QueueHealthOptions, error) {
+	queueOpts := commands.QueueOptions{Limit: 10}
+	healthOpts := commands.QueueHealthOptions{StaleAfter: 30 * time.Minute}
+	if len(args) == 0 {
+		return "queue", queueOpts, healthOpts, nil
+	}
+	if args[0] == "health" {
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			switch arg {
+			case "--json":
+				healthOpts.JSON = true
+			case "--strict":
+				healthOpts.Strict = true
+			case "--write-report":
+				healthOpts.WriteReport = true
+			case "--stale-after":
+				i++
+				if i >= len(args) {
+					return "", queueOpts, healthOpts, errors.New("--stale-after requires a value")
+				}
+				duration, err := time.ParseDuration(args[i])
+				if err != nil {
+					return "", queueOpts, healthOpts, fmt.Errorf("--stale-after: invalid duration %q", args[i])
+				}
+				healthOpts.StaleAfter = duration
+			default:
+				if value, ok := strings.CutPrefix(arg, "--stale-after="); ok {
+					duration, err := time.ParseDuration(value)
+					if err != nil {
+						return "", queueOpts, healthOpts, fmt.Errorf("--stale-after: invalid duration %q", value)
+					}
+					healthOpts.StaleAfter = duration
+					continue
+				}
+				return "", queueOpts, healthOpts, fmt.Errorf("unknown flag %q for queue health", arg)
+			}
+		}
+		return "health", queueOpts, healthOpts, nil
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			queueOpts.JSON = true
+		case "--failed":
+			queueOpts.FailedOnly = true
+		case "--approval-needed":
+			queueOpts.ApprovalNeeded = true
+		case "--running":
+			queueOpts.RunningOnly = true
+		case "--limit":
+			i++
+			if i >= len(args) {
+				return "", queueOpts, healthOpts, errors.New("--limit requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return "", queueOpts, healthOpts, fmt.Errorf("--limit: invalid number %q", args[i])
+			}
+			queueOpts.Limit = n
+		default:
+			if value, ok := strings.CutPrefix(arg, "--limit="); ok {
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return "", queueOpts, healthOpts, fmt.Errorf("--limit: invalid number %q", value)
+				}
+				queueOpts.Limit = n
+				continue
+			}
+			return "", queueOpts, healthOpts, fmt.Errorf("unknown flag %q for queue", arg)
+		}
+	}
+	return "queue", queueOpts, healthOpts, nil
+}
+
+func parseAgentPlanArgs(args []string) (commands.AgentPlanCommandOptions, error) {
+	var opts commands.AgentPlanCommandOptions
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-review":
+			opts.WriteReview = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--planner-fallback-deterministic":
+			opts.FallbackDeterministic = true
+		case "--goal", "--input", "--make-id", "--creative-plan-id", "--run-id", "--platform", "--style-dir",
+			"--planner", "--planner-model", "--planner-backend", "--planner-route",
+			"--planner-timeout-seconds", "--planner-temperature", "--planner-max-output-chars":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("%s requires a value", arg)
+			}
+			switch arg {
+			case "--goal":
+				opts.Goal = args[i]
+			case "--input":
+				opts.InputPath = args[i]
+			case "--make-id":
+				opts.MakeID = args[i]
+			case "--creative-plan-id":
+				opts.CreativePlanID = args[i]
+			case "--run-id":
+				opts.RunID = args[i]
+			case "--platform":
+				opts.Platform = args[i]
+			case "--style-dir":
+				opts.StyleDir = args[i]
+			case "--planner":
+				opts.PlannerName = args[i]
+			case "--planner-model":
+				opts.PlannerModel = args[i]
+			case "--planner-backend":
+				opts.PlannerBackend = args[i]
+			case "--planner-route":
+				opts.PlannerRoute = args[i]
+			case "--planner-timeout-seconds":
+				n, err := strconv.Atoi(args[i])
+				if err != nil {
+					return opts, fmt.Errorf("--planner-timeout-seconds: invalid number %q", args[i])
+				}
+				opts.PlannerTimeoutSeconds = n
+			case "--planner-temperature":
+				f, err := strconv.ParseFloat(args[i], 64)
+				if err != nil {
+					return opts, fmt.Errorf("--planner-temperature: invalid number %q", args[i])
+				}
+				opts.PlannerTemperature = f
+			case "--planner-max-output-chars":
+				n, err := strconv.Atoi(args[i])
+				if err != nil {
+					return opts, fmt.Errorf("--planner-max-output-chars: invalid number %q", args[i])
+				}
+				opts.PlannerMaxOutputChars = n
+			}
+		default:
+			for _, prefix := range []string{"--goal=", "--input=", "--make-id=", "--creative-plan-id=", "--run-id=", "--platform=", "--style-dir=",
+				"--planner=", "--planner-model=", "--planner-backend=", "--planner-route="} {
+				if value, ok := strings.CutPrefix(arg, prefix); ok {
+					switch prefix {
+					case "--goal=":
+						opts.Goal = value
+					case "--input=":
+						opts.InputPath = value
+					case "--make-id=":
+						opts.MakeID = value
+					case "--creative-plan-id=":
+						opts.CreativePlanID = value
+					case "--run-id=":
+						opts.RunID = value
+					case "--platform=":
+						opts.Platform = value
+					case "--style-dir=":
+						opts.StyleDir = value
+					case "--planner=":
+						opts.PlannerName = value
+					case "--planner-model=":
+						opts.PlannerModel = value
+					case "--planner-backend=":
+						opts.PlannerBackend = value
+					case "--planner-route=":
+						opts.PlannerRoute = value
+					}
+					goto nextArg
+				}
+			}
+			return opts, fmt.Errorf("unknown agent-plan flag %q", arg)
+		}
+	nextArg:
+	}
+	if strings.TrimSpace(opts.Goal) == "" {
+		return opts, errors.New("agent-plan requires --goal")
+	}
+	return opts, nil
+}
+
+func parseAgentPlansArgs(args []string) (commands.AgentPlansListOptions, error) {
+	opts := commands.AgentPlansListOptions{Limit: 20}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--status":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--status requires a value")
+			}
+			opts.Status = args[i]
+		case "--limit":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--limit requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("--limit: invalid number %q", args[i])
+			}
+			opts.Limit = n
+		default:
+			if value, ok := strings.CutPrefix(arg, "--status="); ok {
+				opts.Status = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--limit="); ok {
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return opts, fmt.Errorf("--limit: invalid number %q", value)
+				}
+				opts.Limit = n
+				continue
+			}
+			return opts, fmt.Errorf("unknown agent-plans flag %q", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseInspectAgentPlanArgs(args []string) (string, commands.InspectAgentPlanCommandOptions, error) {
+	var opts commands.InspectAgentPlanCommandOptions
+	if len(args) == 0 {
+		return "", opts, errors.New("inspect-agent-plan requires exactly one plan id")
+	}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown inspect-agent-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("inspect-agent-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("inspect-agent-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewAgentPlanArgs(args []string) (string, commands.ReviewAgentPlanCommandOptions, error) {
+	var opts commands.ReviewAgentPlanCommandOptions
+	if len(args) == 0 {
+		return "", opts, errors.New("review-agent-plan requires exactly one plan id")
+	}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown review-agent-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-agent-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-agent-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentPolicyArgs(args []string) (string, commands.AgentPolicyCommandOptions, error) {
+	var opts commands.AgentPolicyCommandOptions
+	if len(args) == 0 {
+		return "", opts, errors.New("agent-policy requires exactly one plan id")
+	}
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-policy flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("agent-policy requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("agent-policy requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseApproveAgentPlanArgs(args []string) (string, commands.ApproveAgentPlanOptions, error) {
+	var opts commands.ApproveAgentPlanOptions
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown approve-agent-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("approve-agent-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("approve-agent-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseRejectAgentPlanArgs(args []string) (string, commands.RejectAgentPlanOptions, error) {
+	var opts commands.RejectAgentPlanOptions
+	planID := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--reason":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--reason requires a value")
+			}
+			opts.Reason = args[i]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--reason="); ok {
+				opts.Reason = value
+				continue
+			}
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown reject-agent-plan flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("reject-agent-plan requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("reject-agent-plan requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentPlanToJobArgs(args []string) (string, commands.AgentPlanToJobOptions, error) {
+	var opts commands.AgentPlanToJobOptions
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			opts.DryRun = true
+		case "--yes":
+			opts.Yes = true
+		case "--json":
+			opts.JSON = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--approve-jobs":
+			opts.ApproveJobs = true
+		case "--force":
+			opts.Force = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-plan-to-job flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("agent-plan-to-job requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("agent-plan-to-job requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentPlanJobsArgs(args []string) (string, commands.AgentPlanJobsOptions, error) {
+	var opts commands.AgentPlanJobsOptions
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-plan-jobs flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("agent-plan-jobs requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("agent-plan-jobs requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentRunArgs(args []string) (string, commands.AgentRunOptions, error) {
+	var opts commands.AgentRunOptions
+	planID := ""
+	for _, arg := range args {
+		switch arg {
+		case "--yes":
+			opts.Yes = true
+		case "--convert":
+			opts.Convert = true
+		case "--approve-jobs":
+			opts.ApproveJobs = true
+		case "--run-jobs":
+			opts.RunJobs = true
+		case "--worker-once":
+			opts.WorkerOnce = true
+		case "--start-daemon":
+			opts.StartDaemon = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--json":
+			opts.JSON = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--force":
+			opts.Force = true
+		case "--fail-fast":
+			opts.FailFast = true
+		case "--write-summary":
+			opts.WriteSummary = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-run flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("agent-run requires exactly one plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("agent-run requires exactly one plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentGraphRunArgs(args []string) (string, commands.AgentGraphRunOptions, error) {
+	var opts commands.AgentGraphRunOptions
+	var planID string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--workers-dir":
+			i++
+			if i >= len(args) {
+				return "", opts, fmt.Errorf("--workers-dir requires a value")
+			}
+			opts.WorkersDir = args[i]
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown agent-graph-run flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, fmt.Errorf("unexpected argument %q", arg)
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, fmt.Errorf("agent-graph-run requires a <plan_id> argument")
+	}
+	return planID, opts, nil
+}
+
+func parseAgentOrchestrateArgs(args []string) (commands.AgentOrchestrateOptions, error) {
+	var extraWorkersDir string
+	var skipGraph bool
+	filtered := []string{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--workers-dir":
+			i++
+			if i >= len(args) {
+				return commands.AgentOrchestrateOptions{}, fmt.Errorf("--workers-dir requires a value")
+			}
+			extraWorkersDir = args[i]
+		case "--skip-graph":
+			skipGraph = true
+		default:
+			if value, ok := strings.CutPrefix(arg, "--workers-dir="); ok {
+				extraWorkersDir = value
+				continue
+			}
+			filtered = append(filtered, arg)
+		}
+	}
+	planOpts, err := parseAgentPlanArgs(filtered)
+	if err != nil {
+		return commands.AgentOrchestrateOptions{}, err
+	}
+	return commands.AgentOrchestrateOptions{
+		AgentPlanCommandOptions: planOpts,
+		WorkersDir:              extraWorkersDir,
+		SkipGraph:               skipGraph,
+	}, nil
+}
+
+func parseVisualRequestsArgs(args []string) (string, commands.VisualRequestsOptions, error) {
+	var opts commands.VisualRequestsOptions
+	var planID string
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--overwrite":
+			opts.Overwrite = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown visual-requests flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("visual-requests requires exactly one agent plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("visual-requests requires exactly one agent plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseExecuteVisualRequestsArgs(args []string) (string, commands.ExecuteVisualRequestsOptions, error) {
+	var opts commands.ExecuteVisualRequestsOptions
+	var planID string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--yes":
+			opts.Yes = true
+		case "--json":
+			opts.JSON = true
+		case "--overwrite":
+			opts.Overwrite = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-external-network":
+			opts.AllowExternalNetwork = true
+		case "--request-id":
+			i++
+			if i >= len(args) {
+				return "", opts, errors.New("--request-id requires a value")
+			}
+			opts.RequestID = args[i]
+		default:
+			if value, ok := strings.CutPrefix(arg, "--request-id="); ok {
+				opts.RequestID = value
+				continue
+			}
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown execute-visual-requests flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("execute-visual-requests requires exactly one agent plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("execute-visual-requests requires exactly one agent plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseReviewVisualGenerationArgs(args []string) (string, commands.ReviewVisualGenerationOptions, error) {
+	var opts commands.ReviewVisualGenerationOptions
+	var planID string
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown review-visual-generation flag %q", arg)
+			}
+			if planID != "" {
+				return "", opts, errors.New("review-visual-generation requires exactly one agent plan id")
+			}
+			planID = arg
+		}
+	}
+	if planID == "" {
+		return "", opts, errors.New("review-visual-generation requires exactly one agent plan id")
+	}
+	return planID, opts, nil
+}
+
+func parseCreateArgs(args []string) (commands.CreateOptions, error) {
+	var opts commands.CreateOptions
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--write-review":
+			opts.WriteReview = true
+		case "--planner-fallback-deterministic":
+			opts.FallbackDeterministic = true
+		case "--skip-graph":
+			opts.SkipGraph = true
+		case "--yes":
+			opts.Yes = true
+		case "--allow-overwrite":
+			opts.AllowOverwrite = true
+		case "--allow-provider-calls":
+			opts.AllowProviderCalls = true
+		case "--allow-external-network":
+			opts.AllowExternalNetwork = true
+		case "--approve-jobs":
+			opts.ApproveJobs = true
+		case "--convert":
+			opts.Convert = true
+		case "--run-jobs":
+			opts.RunJobs = true
+		case "--worker-once":
+			opts.WorkerOnce = true
+		case "--start-daemon":
+			opts.StartDaemon = true
+		case "--fail-fast":
+			opts.FailFast = true
+		case "--burn-captions":
+			opts.BurnCaptions = true
+		case "--allow-missing-captions":
+			opts.AllowMissingCaptions = true
+		case "--generate-script":
+			opts.GenerateScript = true
+		case "--generate-captions":
+			opts.GenerateCaptions = true
+		case "--prepare-voiceover":
+			opts.PrepareVoiceover = true
+		case "--generate-voiceover":
+			opts.GenerateVoiceover = true
+		case "--mix-voiceover":
+			opts.MixVoiceover = true
+		case "--goal", "--input", "--planner", "--planner-model", "--workers-dir", "--approval-scope", "--platform", "--caption-position", "--caption-style":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("%s requires a value", arg)
+			}
+			switch arg {
+			case "--goal":
+				opts.Goal = args[i]
+			case "--input":
+				opts.InputPath = args[i]
+			case "--planner":
+				opts.PlannerName = args[i]
+			case "--planner-model":
+				opts.PlannerModel = args[i]
+			case "--workers-dir":
+				opts.WorkersDir = args[i]
+			case "--approval-scope":
+				opts.ApprovalScope = args[i]
+			case "--platform":
+				opts.Platform = args[i]
+			case "--caption-position":
+				opts.CaptionPosition = args[i]
+			case "--caption-style":
+				opts.CaptionStyle = args[i]
+			}
+		default:
+			if value, ok := strings.CutPrefix(arg, "--goal="); ok {
+				opts.Goal = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--input="); ok {
+				opts.InputPath = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--approval-scope="); ok {
+				opts.ApprovalScope = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--platform="); ok {
+				opts.Platform = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--workers-dir="); ok {
+				opts.WorkersDir = value
+				continue
+			}
+			if strings.HasPrefix(arg, "--") {
+				return opts, fmt.Errorf("unknown create flag %q", arg)
+			}
+			if opts.InputPath != "" {
+				return opts, errors.New("create accepts at most one positional input")
+			}
+			opts.InputPath = arg
+		}
+	}
+	if strings.TrimSpace(opts.Goal) == "" {
+		return opts, errors.New("create requires --goal")
+	}
+	if opts.ApprovalScope != "" {
+		switch opts.ApprovalScope {
+		case "preview", "local", "provider", "full":
+		default:
+			return opts, fmt.Errorf("invalid --approval-scope %q", opts.ApprovalScope)
+		}
+	}
+	return opts, nil
+}
+
+func parseCreateResultArgs(args []string) (string, commands.CreateResultOptions, error) {
+	var opts commands.CreateResultOptions
+	var sessionID string
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--write-artifact":
+			opts.WriteArtifact = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown create-result flag %q", arg)
+			}
+			if sessionID != "" {
+				return "", opts, errors.New("create-result requires exactly one session id")
+			}
+			sessionID = arg
+		}
+	}
+	if sessionID == "" {
+		return "", opts, errors.New("create-result requires exactly one session id")
+	}
+	return sessionID, opts, nil
+}
+
+func parseCreateSessionsArgs(args []string) (commands.CreateSessionsOptions, error) {
+	opts := commands.CreateSessionsOptions{Limit: 20}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		case "--status":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--status requires a value")
+			}
+			opts.Status = args[i]
+		case "--limit":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--limit requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("--limit: invalid number %q", args[i])
+			}
+			opts.Limit = n
+		default:
+			if value, ok := strings.CutPrefix(arg, "--status="); ok {
+				opts.Status = value
+				continue
+			}
+			if value, ok := strings.CutPrefix(arg, "--limit="); ok {
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return opts, fmt.Errorf("--limit: invalid number %q", value)
+				}
+				opts.Limit = n
+				continue
+			}
+			return opts, fmt.Errorf("unknown create-sessions flag %q", arg)
+		}
+	}
+	return opts, nil
+}
+
+func parseInspectCreateSessionArgs(args []string) (string, commands.InspectCreateSessionOptions, error) {
+	var opts commands.InspectCreateSessionOptions
+	var sessionID string
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return "", opts, fmt.Errorf("unknown inspect-create-session flag %q", arg)
+			}
+			if sessionID != "" {
+				return "", opts, errors.New("inspect-create-session requires exactly one session id")
+			}
+			sessionID = arg
+		}
+	}
+	if sessionID == "" {
+		return "", opts, errors.New("inspect-create-session requires exactly one session id")
+	}
+	return sessionID, opts, nil
+}
+
+func parsePlannerDiagnoseArgs(args []string) (commands.PlannerDiagnoseOptions, error) {
+	var opts commands.PlannerDiagnoseOptions
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--check":
+			opts.Check = true
+		case "--json":
+			opts.JSON = true
+		case "--planner-fallback-deterministic":
+			// accepted and silently ignored in diagnose context
+		case "--planner", "--planner-model", "--planner-backend", "--planner-route", "--planner-timeout-seconds":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("%s requires a value", arg)
+			}
+			switch arg {
+			case "--planner":
+				opts.PlannerName = args[i]
+			case "--planner-model":
+				opts.PlannerModel = args[i]
+			case "--planner-backend":
+				opts.PlannerBackend = args[i]
+			case "--planner-route":
+				opts.PlannerRoute = args[i]
+			case "--planner-timeout-seconds":
+				n, err := strconv.Atoi(args[i])
+				if err != nil {
+					return opts, fmt.Errorf("--planner-timeout-seconds: invalid number %q", args[i])
+				}
+				opts.PlannerTimeoutSeconds = n
+			}
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return opts, fmt.Errorf("unknown agent-planner-diagnose flag %q", arg)
+			}
 		}
 	}
 	return opts, nil

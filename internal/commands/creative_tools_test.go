@@ -320,6 +320,91 @@ func TestCreativePlansInspectAndReview(t *testing.T) {
 	}
 }
 
+// ---- script intent detection tests ----
+
+func minimalTools() config.ToolsConfig {
+	return config.ToolsConfig{
+		Enabled: true,
+		Backends: map[string]config.ToolBackendConfig{
+			"writer": {Kind: "text_generation", Provider: "ollama", Endpoint: "http://localhost:11434", Auth: config.ToolAuthConfig{Type: "none"}},
+		},
+		Routes: map[string]string{"creative.script": "writer"},
+	}
+}
+
+func hasTextGenerationReq(reqs []CapabilityRequirement) bool {
+	for _, r := range reqs {
+		if r.Capability == "text_generation" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDetect_WriteAScript_ProducesTextGeneration(t *testing.T) {
+	reqs := detectCapabilityRequirements("write a script for a short cinematic clip", minimalTools())
+	if !hasTextGenerationReq(reqs) {
+		t.Fatalf("expected text_generation requirement for 'write a script for a short cinematic clip', got %+v", reqs)
+	}
+}
+
+func TestDetect_GenerateAScript_ProducesTextGeneration(t *testing.T) {
+	reqs := detectCapabilityRequirements("generate a script for my product video", minimalTools())
+	if !hasTextGenerationReq(reqs) {
+		t.Fatalf("expected text_generation requirement, got %+v", reqs)
+	}
+}
+
+func TestDetect_AdScript_ProducesTextGeneration(t *testing.T) {
+	reqs := detectCapabilityRequirements("create an ad script for my brand", minimalTools())
+	if !hasTextGenerationReq(reqs) {
+		t.Fatalf("expected text_generation requirement for 'ad script', got %+v", reqs)
+	}
+}
+
+func TestDetect_HookScript_ProducesTextGeneration(t *testing.T) {
+	reqs := detectCapabilityRequirements("write a hook script to grab attention", minimalTools())
+	if !hasTextGenerationReq(reqs) {
+		t.Fatalf("expected text_generation requirement for 'hook script', got %+v", reqs)
+	}
+}
+
+func TestDetect_ShortScriptGoal_NoRenderComposition(t *testing.T) {
+	// When script intent is present, render_composition should not appear
+	reqs := detectCapabilityRequirements("write a short script for a product demo", minimalTools())
+	for _, r := range reqs {
+		if r.Capability == "render_composition" {
+			t.Fatalf("render_composition should not appear when script intent is explicit, got %+v", reqs)
+		}
+	}
+}
+
+func TestDetect_NarrationVoiceover_ProducesTextGenerationAndVoiceover(t *testing.T) {
+	tools := config.ToolsConfig{
+		Enabled: true,
+		Backends: map[string]config.ToolBackendConfig{
+			"writer": {Kind: "text_generation", Provider: "ollama", Endpoint: "http://localhost:11434", Auth: config.ToolAuthConfig{Type: "none"}},
+		},
+		Routes: map[string]string{"creative.script": "writer"},
+	}
+	reqs := detectCapabilityRequirements("add narration and voiceover to my clip", tools)
+	var hasText, hasVoiceover bool
+	for _, r := range reqs {
+		if r.Capability == "text_generation" {
+			hasText = true
+		}
+		if r.Capability == "voice_generation" {
+			hasVoiceover = true
+		}
+	}
+	if !hasText {
+		t.Fatal("expected text_generation requirement for narration/voiceover goal")
+	}
+	if !hasVoiceover {
+		t.Fatal("expected voice_generation requirement for narration/voiceover goal")
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }

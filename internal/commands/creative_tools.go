@@ -452,6 +452,17 @@ func InspectCreativePlan(planID string, stdout io.Writer, opts InspectCreativePl
 			if _, err := os.Stat(filepath.Join(planDir, finalOut)); err == nil {
 				fmt.Fprintf(stdout, "  draft exists:     yes\n")
 			}
+			if ar.Platform != nil && ar.Platform.Requested {
+				if ar.Platform.Status == "applied" {
+					fmt.Fprintf(stdout, "  platform:         %s (%dx%d, fit=%s)\n",
+						ar.Platform.Normalized, ar.Platform.Width, ar.Platform.Height, ar.Platform.Fit)
+				} else {
+					fmt.Fprintf(stdout, "  platform:         %s (%s)\n", ar.Platform.Normalized, ar.Platform.Status)
+				}
+			}
+			if ar.FinalProbe != nil && ar.FinalProbe.Width > 0 {
+				fmt.Fprintf(stdout, "  final dims:       %dx%d\n", ar.FinalProbe.Width, ar.FinalProbe.Height)
+			}
 			if ar.Captions != nil && ar.Captions.Requested {
 				fmt.Fprintf(stdout, "  captions:         %s\n", ar.Captions.Status)
 			}
@@ -463,6 +474,72 @@ func InspectCreativePlan(planID string, stdout io.Writer, opts InspectCreativePl
 				fmt.Fprintf(stdout, "  assemble review:  %s\n", assembleReviewPath)
 			}
 		}
+	}
+
+	// script_draft.json
+	scriptDraftPath := filepath.Join(outputsDir, "script_draft.json")
+	if sdData, err := os.ReadFile(scriptDraftPath); err == nil {
+		var sd CreativeScriptOutput
+		if json.Unmarshal(sdData, &sd) == nil {
+			label := sd.Mode
+			if sd.Model != "" {
+				label += "/" + sd.Model
+			}
+			styleTag := ""
+			if sd.StyleContext != nil && sd.StyleContext.Enabled {
+				styleTag = " +style"
+			}
+			fmt.Fprintf(stdout, "  script:           %s (%d words)%s\n", label, wordCount(sd.Text), styleTag)
+			if sd.PlatformHint != "" && sd.PlatformHint != "general" {
+				fmt.Fprintf(stdout, "  platform:         %s\n", sd.PlatformHint)
+			}
+		}
+	}
+
+	// caption_variants.json
+	captionVariantsPath := filepath.Join(outputsDir, "caption_variants.json")
+	if cvData, err := os.ReadFile(captionVariantsPath); err == nil {
+		var cv CaptionVariantsOutput
+		if json.Unmarshal(cvData, &cv) == nil {
+			label := cv.Mode
+			if cv.Model != "" {
+				label += "/" + cv.Model
+			}
+			styleTag := ""
+			if cv.StyleContext != nil && cv.StyleContext.Enabled {
+				styleTag = " +style"
+			}
+			fmt.Fprintf(stdout, "  captions:         %s (%d variants)%s\n", label, len(cv.Variants), styleTag)
+		}
+	}
+
+	// voiceover_text.json
+	voiceoverTextPath := filepath.Join(outputsDir, "voiceover_text.json")
+	if vtData, err := os.ReadFile(voiceoverTextPath); err == nil {
+		var vt VoiceoverTextOutput
+		if json.Unmarshal(vtData, &vt) == nil {
+			fmt.Fprintf(stdout, "  voiceover_text:   %s (%d words, source=%s)\n", vt.Mode, vt.WordCount, vt.Source.SourceType)
+		}
+	}
+	// voiceover_generation.json
+	genPath := filepath.Join(outputsDir, "voiceover_generation.json")
+	if genData, err := os.ReadFile(genPath); err == nil {
+		var gen VoiceGenerationOutput
+		if json.Unmarshal(genData, &gen) == nil {
+			label := gen.Status
+			if gen.Provider != "" {
+				label += " (" + gen.Provider + "/" + gen.Model + ")"
+			}
+			if gen.Output != nil {
+				label += fmt.Sprintf(", %d bytes", gen.Output.Bytes)
+			}
+			fmt.Fprintf(stdout, "  voiceover_gen:    %s\n", label)
+		}
+	}
+	// voiceover audio
+	if audioPath := discoverVoiceoverAudio(outputsDir); audioPath != "" {
+		rel, _ := filepath.Rel(planDir, audioPath)
+		fmt.Fprintf(stdout, "  voiceover_audio:  found (%s)\n", rel)
 	}
 
 	fmt.Fprintf(stdout, "  steps:            %d\n", len(plan.Steps))
@@ -703,12 +780,29 @@ func detectCapabilityRequirements(goal string, tools config.ToolsConfig) []Capab
 	add := func(reason string, suggested string, kinds ...string) {
 		rules = append(rules, creativeRequirementRule{Reason: reason, SuggestedRoute: suggested, Kinds: kinds})
 	}
+	// Explicit script-writing intent — checked first so "write a script for a short clip"
+	// produces a generate_script step, not just render_composition.
+	scriptIntent := strings.Contains(lower, "write a script") ||
+		strings.Contains(lower, "generate a script") ||
+		strings.Contains(lower, "make a script") ||
+		strings.Contains(lower, "draft a script") ||
+		strings.Contains(lower, "write narration") ||
+		strings.Contains(lower, "write voiceover") ||
+		strings.Contains(lower, "intro voiceover") ||
+		strings.Contains(lower, "ad script") ||
+		strings.Contains(lower, "short script") ||
+		strings.Contains(lower, "hook script")
+	if scriptIntent {
+		add("Draft script or creative text.", "creative.script", "text_generation")
+	}
 	if strings.Contains(lower, "narration") || strings.Contains(lower, "voiceover") || strings.Contains(lower, "voice over") {
-		add("Draft narration/script.", "creative.script", "text_generation")
+		if !scriptIntent {
+			add("Draft narration/script.", "creative.script", "text_generation")
+		}
 		add("Generate voiceover audio.", "creative.voiceover", "voice_generation")
 		add("Compose the final timed output.", "creative.render", "render_composition")
 	}
-	if strings.Contains(lower, "cinematic") || strings.Contains(lower, "short") {
+	if (strings.Contains(lower, "cinematic") || strings.Contains(lower, "short")) && !scriptIntent {
 		add("Compose the final timed output.", "creative.render", "render_composition")
 	}
 	if strings.Contains(lower, "b-roll") || strings.Contains(lower, "broll") {

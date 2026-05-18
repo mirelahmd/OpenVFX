@@ -35,6 +35,10 @@ Planning does not call providers and does not modify the input file.
 ./byom-video creative-execute-stub <creative_plan_id>
 ./byom-video review-creative-outputs <creative_plan_id> --write-artifact
 
+# 6b. (Optional) Generate script via Ollama — requires tools config + local Ollama
+./byom-video creative-generate-script <creative_plan_id>
+./byom-video review-script <creative_plan_id> --write-artifact
+
 # 7. Timeline assembly (optional run clips via --run-id)
 ./byom-video creative-timeline <creative_plan_id> [--run-id <run_id>]
 ./byom-video creative-render-plan <creative_plan_id>
@@ -138,8 +142,11 @@ Not all artifact files are written on every run — only those matching the plan
 
 `creative-timeline` assembles tracks from stub outputs and optional run clips into a `creative_timeline.v1` artifact.
 
-- `--run-id <id>` — load clips from a pipeline run (selected_clips.json → roughcut.json fallback)
-- `--prefer-goal` — prefer goal_roughcut.json → enhanced_roughcut.json → roughcut.json → selected_clips.json
+- `--run-id <id>` — load clips from a pipeline run using the following source order:
+  - Default: `selected_clips.json` → `goal_roughcut.json` → `enhanced_roughcut.json` → `roughcut.json`
+  - `--prefer-goal`: `goal_roughcut.json` → `selected_clips.json` → `enhanced_roughcut.json` → `roughcut.json`
+  - Falls back through all sources in order; warns with the full checked list if none found
+- `--prefer-goal` — prioritise goal-aware cut above selected clips
 - `--overwrite` — required to replace existing timeline
 - Writes `outputs/creative_timeline.json` (schema: `creative_timeline.v1`)
 - Updates `outputs/creative_outputs.json` index
@@ -220,3 +227,84 @@ Planning still succeeds when capabilities are missing. Missing items become warn
 Use `--strict` if you want planning to fail when the goal cannot be fully satisfied by the current `tools` config.
 
 `creative-preview --strict` also fails when any step has no configured backend.
+
+## One-Command Creator Flow
+
+`byom-video make` wraps the full workflow into a single command. It calls pipeline, creative-plan,
+stub execution, timeline, render plan, and assemble in order. Use it for the primary editing path.
+
+```sh
+# Planning mode (pipeline + plan only, then stops for review)
+BYOM_VIDEO_PYTHON=.venv/bin/python ./byom-video make media/clip.mov \
+  --goal "make a short cinematic clip with captions"
+
+# Execution mode (--yes = approve and assemble)
+BYOM_VIDEO_PYTHON=.venv/bin/python ./byom-video make media/clip.mov \
+  --goal "make a short cinematic clip with captions" \
+  --yes --burn-captions --allow-missing-captions
+
+# Reuse an existing pipeline run (skip re-transcribing)
+./byom-video make --goal "make a cinematic short" \
+  --skip-pipeline <run_id> --yes --burn-captions --allow-missing-captions
+
+# Strict input path check (fail if input differs from run manifest)
+./byom-video make --goal "make a cinematic short" \
+  --skip-pipeline <run_id> media/clip.mov --strict-input --yes
+
+# Also run export after pipeline
+BYOM_VIDEO_PYTHON=.venv/bin/python ./byom-video make media/clip.mov \
+  --goal "make a short clip" --yes --export
+
+# Fail if export is unavailable
+BYOM_VIDEO_PYTHON=.venv/bin/python ./byom-video make media/clip.mov \
+  --goal "make a short clip" --yes --export --require-export
+
+# Preset (default: shorts; metadata = pipeline only)
+./byom-video make media/clip.mov --goal "inspect clip" --preset metadata
+
+# Goal-aware (deterministic reranking)
+BYOM_VIDEO_PYTHON=.venv/bin/python ./byom-video make media/clip.mov \
+  --goal "make a short cinematic clip" --yes --goal-aware
+
+# List and inspect make runs
+./byom-video makes
+./byom-video make-result <make_id>
+./byom-video make-result <make_id> --write-artifact
+./byom-video inspect-make <make_id>
+```
+
+### make-result
+
+`byom-video make-result <make_id>` prints a user-facing summary of a make run.
+
+- `--json` — emit the full `make_summary.json` as JSON
+- `--write-artifact` — write `.byom-video/makes/<make_id>/make_result.md`
+
+`inspect-make` remains available for the raw technical view (all status fields, pipeline/creative/assemble/validation/export statuses, draft probe info).
+
+### make_summary.json schema (make_summary.v1)
+
+Key fields added in Prompt 048:
+
+| Field | Description |
+|---|---|
+| `preset` | shorts or metadata |
+| `skip_pipeline` | true if --skip-pipeline was used |
+| `reused_run_id` | the run_id that was reused |
+| `input_warning` | set if input path differs from run manifest |
+| `pipeline_status` | completed or skipped |
+| `creative_status` | planned or stub_completed |
+| `assemble_status` | completed |
+| `validation_status` | ok or failed |
+| `export_status` | completed, failed, or absent |
+| `exported_files` | list of exported file paths |
+| `caption_status` | from assemble result |
+| `voiceover_status` | from assemble result |
+| `draft_probe` | duration_seconds, video_stream_count, audio_stream_count |
+
+### Current limitations
+
+- `make` always runs `pipeline --preset shorts` unless `--skip-pipeline` is set; `--preset` controls validation only.
+- Goal-aware Ollama reranking requires `--goal-aware --use-ollama-goal` and a running Ollama server.
+- `--export` requires `ffmpeg_commands.sh` to exist in the run directory (produced by `pipeline --preset shorts`).
+- No auto-export by default; use `--export` or `byom-video export <run_id>` separately.

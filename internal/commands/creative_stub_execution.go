@@ -30,15 +30,31 @@ type CreativeOutputArtifact struct {
 	Status string `json:"status"`
 }
 
+type ScriptRequest struct {
+	MaxWords int    `json:"max_words,omitempty"`
+	Tone     string `json:"tone,omitempty"`
+}
+
 type CreativeScriptOutput struct {
-	SchemaVersion  string    `json:"schema_version"`
-	CreatedAt      time.Time `json:"created_at"`
-	CreativePlanID string    `json:"creative_plan_id"`
-	StepID         string    `json:"step_id"`
-	Goal           string    `json:"goal"`
-	Mode           string    `json:"mode"`
-	Text           string    `json:"text"`
-	Notes          []string  `json:"notes"`
+	SchemaVersion          string        `json:"schema_version"`
+	CreatedAt              time.Time     `json:"created_at"`
+	CreativePlanID         string        `json:"creative_plan_id"`
+	StepID                 string        `json:"step_id"`
+	Goal                   string        `json:"goal"`
+	Mode                   string        `json:"mode"`
+	Provider               string        `json:"provider,omitempty"`
+	Model                  string        `json:"model,omitempty"`
+	Route                  string        `json:"route,omitempty"`
+	Backend                string        `json:"backend,omitempty"`
+	Title                  string        `json:"title,omitempty"`
+	Hook                   string        `json:"hook,omitempty"`
+	Text                   string        `json:"text"`
+	OnScreenTextSuggestions []string     `json:"on_screen_text_suggestions,omitempty"`
+	PlatformHint           string        `json:"platform_hint,omitempty"`
+	Notes                  []string      `json:"notes"`
+	StyleContext            *StyleContext `json:"style_context,omitempty"`
+	Request                ScriptRequest `json:"request,omitempty"`
+	Warnings               []string      `json:"warnings,omitempty"`
 }
 
 type VoiceoverPlanOutput struct {

@@ -43,6 +43,9 @@ type AgentResultPath struct {
 }
 
 func AgentResultCommand(planID string, stdout io.Writer, opts AgentResultOptions) error {
+	if _, err := readAgentPlan(planID); err == nil {
+		return AgentPlanResult(planID, stdout, opts)
+	}
 	summary, err := BuildAgentResultSummary(planID)
 	if err != nil {
 		return err

@@ -29,8 +29,29 @@ type CreativeAssembleResult struct {
 	Clips           []AssembledClip          `json:"clips"`
 	Captions        *AssembleCaptionsResult  `json:"captions,omitempty"`
 	Voiceover       *AssembleVoiceoverResult `json:"voiceover,omitempty"`
+	Platform        *AssemblePlatformResult  `json:"platform,omitempty"`
+	FinalProbe      *AssembleFinalProbe      `json:"final_probe,omitempty"`
 	Stages          []AssembleStage          `json:"stages,omitempty"`
 	Warnings        []string                 `json:"warnings,omitempty"`
+}
+
+type AssemblePlatformResult struct {
+	Requested  bool   `json:"requested"`
+	Normalized string `json:"normalized"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	Fit        string `json:"fit"`
+	Background string `json:"background"`
+	Status     string `json:"status"` // applied|skipped|failed
+	Error      string `json:"error,omitempty"`
+}
+
+type AssembleFinalProbe struct {
+	DurationSeconds  float64 `json:"duration_seconds"`
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	VideoStreamCount int     `json:"video_stream_count"`
+	AudioStreamCount int     `json:"audio_stream_count"`
 }
 
 type AssembledClip struct {
@@ -45,10 +66,14 @@ type AssembledClip struct {
 }
 
 type AssembleCaptionsResult struct {
-	Requested  bool   `json:"requested"`
-	SourcePath string `json:"source_path,omitempty"`
-	Status     string `json:"status"` // applied|missing|skipped|failed
-	Error      string `json:"error,omitempty"`
+	Requested   bool   `json:"requested"`
+	SourcePath  string `json:"source_path,omitempty"`
+	Status      string `json:"status"` // applied|missing|skipped|failed
+	Position    string `json:"position,omitempty"`
+	Margin      int    `json:"margin,omitempty"`
+	Style       string `json:"style,omitempty"`
+	FilterStyle string `json:"filter_style,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type AssembleVoiceoverResult struct {
@@ -80,6 +105,12 @@ type CreativeAssembleOptions struct {
 	MixVoiceover           bool
 	AllowMissingVoiceover  bool
 	RunID                  string // for caption/voiceover discovery
+	Platform               string // platform preset (default: "original")
+	Fit                    string // "crop" | "pad" (default: per-preset)
+	Background             string // color for pad mode (default: "black")
+	CaptionPosition        string // bottom|center|top|auto (default: auto)
+	CaptionMargin          int    // vertical margin in pixels (0 = use platform default)
+	CaptionStyle           string // default|bold|boxed
 }
 
 type ValidateCreativeAssembleOptions struct{ JSON bool }
@@ -93,6 +124,8 @@ type ReviewCreativeAssembleOptions struct {
 
 type ffmpegRunner interface {
 	Run(args []string) ([]byte, error)
+	// CheckFilter probes ffmpeg for a named filter. Returns true if available.
+	CheckFilter(filter string) bool
 }
 
 type realFFmpegRunner struct{ path string }
@@ -100,6 +133,39 @@ type realFFmpegRunner struct{ path string }
 func (r realFFmpegRunner) Run(args []string) ([]byte, error) {
 	cmd := exec.Command(r.path, args...)
 	return cmd.CombinedOutput()
+}
+
+func (r realFFmpegRunner) CheckFilter(filter string) bool {
+	out, err := exec.Command(r.path, "-hide_banner", "-filters").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		// filter list lines look like " .. subtitles ..." or " TS subtitles ..."
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == filter {
+			return true
+		}
+	}
+	return false
+}
+
+// truncateStderr returns the last N lines of FFmpeg output, capped to maxBytes.
+// This keeps error messages readable without flooding the log.
+func truncateStderr(raw []byte, maxLines int, maxBytes int) string {
+	s := strings.TrimSpace(string(raw))
+	if len(s) == 0 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	out := strings.Join(lines, "\n")
+	if len(out) > maxBytes {
+		out = "..." + out[len(out)-maxBytes:]
+	}
+	return out
 }
 
 // ---- creative-assemble ----
@@ -180,7 +246,31 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 	draftPath := filepath.Join(outputsDir, "draft.mp4")
 	resultPath := filepath.Join(outputsDir, "creative_assemble_result.json")
 
-	needsPostProcess := opts.BurnCaptions || opts.MixVoiceover
+	// Validate caption position/style early.
+	if _, err := NormalizeCaptionPosition(opts.CaptionPosition); err != nil {
+		return err
+	}
+	if _, err := NormalizeCaptionStyle(opts.CaptionStyle); err != nil {
+		return err
+	}
+
+	// Resolve platform preset
+	normPlatform, platErr := NormalizePlatform(opts.Platform)
+	if platErr != nil {
+		return platErr
+	}
+	platPreset := LookupPlatform(normPlatform)
+	hasPlatform := normPlatform != "" && normPlatform != "original"
+	platFit := opts.Fit
+	if platFit == "" {
+		platFit = DefaultFitForPlatform(normPlatform)
+	}
+	platBackground := opts.Background
+	if platBackground == "" {
+		platBackground = "black"
+	}
+
+	needsPostProcess := opts.BurnCaptions || opts.MixVoiceover || hasPlatform
 
 	// determine assembled base file
 	var assembledBase string
@@ -214,12 +304,44 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 		return fmt.Errorf("--burn-captions requested but no caption file found; pass --captions <path> or --allow-missing-captions to skip")
 	}
 	if opts.MixVoiceover && voPath == "" && !opts.AllowMissingVoiceover {
-		return fmt.Errorf("--mix-voiceover requested but no voiceover file found; pass --voiceover <path> or --allow-missing-voiceover to skip")
+		placement := fmt.Sprintf("Create or place audio at %s, or pass --voiceover <path>, or rerun with --allow-missing-voiceover.", outputsDir)
+		// Check if voiceover_text exists to provide a more actionable message
+		if _, vtErr := os.Stat(filepath.Join(outputsDir, "voiceover_text.json")); vtErr == nil {
+			return fmt.Errorf("--mix-voiceover requested but no voiceover audio found; voiceover text is ready. %s", placement)
+		}
+		return fmt.Errorf("--mix-voiceover requested but no voiceover file found; %s", placement)
 	}
+
+	// subtitles filter preflight — check before any ffmpeg work is done (skip for dry-run)
+	hasSubtitlesFilter := true
+	if opts.BurnCaptions && captPath != "" && !opts.DryRun {
+		hasSubtitlesFilter = runner.CheckFilter("subtitles")
+		if !hasSubtitlesFilter {
+			const hint = "ffmpeg does not support the subtitles filter required for caption burn. " +
+				"Install ffmpeg with libass support (e.g. brew install ffmpeg --HEAD or compile with --enable-libass) " +
+				"or rerun with --allow-missing-captions to skip caption burn."
+			if !opts.AllowMissingCaptions {
+				return fmt.Errorf(hint)
+			}
+			// allow-missing-captions: will skip the caption stage below
+		}
+	}
+
+	// Resolve caption position/style for dry-run output.
+	dryNormCaptPos, _ := NormalizeCaptionPosition(opts.CaptionPosition)
+	dryResolvedCaptPos := ResolveCaptionPosition(dryNormCaptPos, normPlatform)
+	dryCaptMargin := opts.CaptionMargin
+	if dryCaptMargin <= 0 {
+		dryCaptMargin = DefaultCaptionMargin(normPlatform)
+	}
+	dryNormCaptStyle, _ := NormalizeCaptionStyle(opts.CaptionStyle)
+	dryCaptForceStyle := buildForceStyleArg(dryResolvedCaptPos, dryCaptMargin, dryNormCaptStyle)
 
 	// dry-run
 	if opts.DryRun {
-		printDryRun(stdout, planID, opts, sourceClips, sourcePath, workDir, assembledBase, draftPath, captPath, voPath)
+		printDryRun(stdout, planID, opts, normPlatform, platPreset, platFit, platBackground,
+			dryResolvedCaptPos, dryCaptMargin, dryNormCaptStyle, dryCaptForceStyle,
+			sourceClips, sourcePath, workDir, assembledBase, draftPath, captPath, voPath)
 		return nil
 	}
 
@@ -244,7 +366,7 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 	warnings = append(warnings, clipWarnings...)
 
 	if assembleErr != nil {
-		writeFailedResult(resultPath, planID, opts.Mode, assembledClips, warnings, nil, nil, nil)
+		writeFailedResult(resultPath, planID, opts.Mode, assembledClips, warnings, nil, nil, nil, nil)
 		if log != nil {
 			_ = log.Write("CREATIVE_ASSEMBLE_FAILED", map[string]any{"plan_id": planID, "reason": assembleErr.Error()})
 			_ = log.Close()
@@ -267,12 +389,14 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 
 		if voPath == "" {
 			voResult.Status = "skipped"
-			warnings = append(warnings, "voiceover requested but not found; continuing without voiceover")
+			voWarn := "voiceover requested but not found; continuing without voiceover"
+			placement := fmt.Sprintf("To add voiceover: place audio at %s or pass --voiceover <path>", outputsDir)
+			warnings = append(warnings, voWarn, placement)
 			stages = append(stages, AssembleStage{Name: "voiceover_mix", File: "", Status: "skipped"})
 			afterVoiceover = assembledBase
 		} else {
 			voResult.SourcePath = voPath
-			if opts.BurnCaptions {
+			if opts.BurnCaptions || hasPlatform {
 				afterVoiceover = filepath.Join(outputsDir, "draft_audio.mp4")
 			} else {
 				afterVoiceover = draftPath
@@ -284,9 +408,10 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 			voArgs := buildVoiceoverArgs(assembledBase, voPath, afterVoiceover)
 			voOut, voErr := runner.Run(voArgs)
 			if voErr != nil {
+				snippet := truncateStderr(voOut, 5, 400)
 				voResult.Status = "failed"
-				voResult.Error = strings.TrimSpace(string(voOut))
-				warnings = append(warnings, fmt.Sprintf("voiceover mix failed: %v", voErr))
+				voResult.Error = snippet
+				warnings = append(warnings, fmt.Sprintf("voiceover mix failed: %v: %s", voErr, snippet))
 				stages = append(stages, AssembleStage{Name: "voiceover_mix", File: relPath(planDir, afterVoiceover), Status: "failed"})
 				afterVoiceover = assembledBase // fall back to assembled
 				if log != nil {
@@ -304,33 +429,122 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 		afterVoiceover = assembledBase
 	}
 
-	// ---- Stage 3: caption burn ----
+	// ---- Stage 3: platform format ----
+	var platResult *AssemblePlatformResult
+	afterPlatform := afterVoiceover
+
+	if hasPlatform {
+		platResult = &AssemblePlatformResult{
+			Requested:  true,
+			Normalized: normPlatform,
+			Width:      platPreset.Width,
+			Height:     platPreset.Height,
+			Fit:        platFit,
+			Background: platBackground,
+		}
+
+		var platOut string
+		if opts.BurnCaptions {
+			platOut = filepath.Join(outputsDir, "draft_platform.mp4")
+		} else {
+			platOut = draftPath
+		}
+
+		if log != nil {
+			_ = log.Write("CREATIVE_ASSEMBLE_PLATFORM_STARTED", map[string]any{
+				"plan_id":  planID,
+				"platform": normPlatform,
+				"width":    platPreset.Width,
+				"height":   platPreset.Height,
+				"fit":      platFit,
+			})
+		}
+
+		platArgs := buildPlatformArgs(afterVoiceover, platOut, platPreset, platFit, platBackground)
+		platOut2, platErr2 := runner.Run(platArgs)
+		if platErr2 != nil {
+			snippet := truncateStderr(platOut2, 5, 400)
+			platResult.Status = "failed"
+			platResult.Error = snippet
+			warnings = append(warnings, fmt.Sprintf("platform format failed: %v: %s", platErr2, snippet))
+			stages = append(stages, AssembleStage{Name: "platform_format", File: relPath(planDir, platOut), Status: "failed"})
+			afterPlatform = afterVoiceover // fall back to pre-platform
+			if log != nil {
+				_ = log.Write("CREATIVE_ASSEMBLE_PLATFORM_FAILED", map[string]any{"plan_id": planID, "error": platErr2.Error()})
+			}
+		} else {
+			platResult.Status = "applied"
+			stages = append(stages, AssembleStage{Name: "platform_format", File: relPath(planDir, platOut), Status: "completed"})
+			afterPlatform = platOut
+			if log != nil {
+				_ = log.Write("CREATIVE_ASSEMBLE_PLATFORM_COMPLETED", map[string]any{
+					"plan_id":  planID,
+					"platform": normPlatform,
+					"output":   platOut,
+				})
+			}
+		}
+	}
+
+	// ---- Caption position/style resolution ----
+	normCaptPos, _ := NormalizeCaptionPosition(opts.CaptionPosition) // already validated above
+	resolvedCaptPos := ResolveCaptionPosition(normCaptPos, normPlatform)
+	captMargin := opts.CaptionMargin
+	if captMargin <= 0 {
+		captMargin = DefaultCaptionMargin(normPlatform)
+	}
+	normCaptStyle, _ := NormalizeCaptionStyle(opts.CaptionStyle) // already validated above
+	captForceStyle := buildForceStyleArg(resolvedCaptPos, captMargin, normCaptStyle)
+
+	// ---- Stage 4: caption burn ----
 	var captResult *AssembleCaptionsResult
 	var finalFile string
 
 	if opts.BurnCaptions {
-		captResult = &AssembleCaptionsResult{Requested: true}
+		captResult = &AssembleCaptionsResult{
+			Requested:   true,
+			Position:    resolvedCaptPos,
+			Margin:      captMargin,
+			Style:       normCaptStyle,
+			FilterStyle: captForceStyle,
+		}
 
-		if captPath == "" {
+		switch {
+		case captPath == "":
 			captResult.Status = "skipped"
 			warnings = append(warnings, "caption burn requested but no SRT file found; continuing without captions")
 			stages = append(stages, AssembleStage{Name: "caption_burn", File: "", Status: "skipped"})
-			finalFile = afterVoiceover
-		} else {
+			finalFile = afterPlatform
+
+		case !hasSubtitlesFilter:
+			captResult.Status = "skipped"
+			const filterWarn = "caption burn skipped: ffmpeg does not support the subtitles filter on this system. " +
+				"Install ffmpeg with libass support to enable caption burn."
+			warnings = append(warnings, filterWarn)
+			stages = append(stages, AssembleStage{Name: "caption_burn", File: "", Status: "skipped"})
+			if log != nil {
+				_ = log.Write("CREATIVE_ASSEMBLE_CAPTIONS_FAILED", map[string]any{
+					"plan_id": planID, "error": "subtitles filter unavailable",
+				})
+			}
+			finalFile = afterPlatform
+
+		default:
 			captResult.SourcePath = captPath
 			finalFile = draftPath
 
 			if log != nil {
 				_ = log.Write("CREATIVE_ASSEMBLE_CAPTIONS_STARTED", map[string]any{"plan_id": planID, "captions": captPath})
 			}
-			captArgs := buildCaptionArgs(afterVoiceover, captPath, draftPath)
+			captArgs := buildCaptionArgs(afterPlatform, captPath, draftPath, captForceStyle)
 			captOut, captErr := runner.Run(captArgs)
 			if captErr != nil {
+				snippet := truncateStderr(captOut, 5, 400)
 				captResult.Status = "failed"
-				captResult.Error = strings.TrimSpace(string(captOut))
-				warnings = append(warnings, fmt.Sprintf("caption burn failed: %v", captErr))
+				captResult.Error = snippet
+				warnings = append(warnings, fmt.Sprintf("caption burn failed: %v: %s", captErr, snippet))
 				stages = append(stages, AssembleStage{Name: "caption_burn", File: "outputs/draft.mp4", Status: "failed"})
-				finalFile = afterVoiceover // fall back
+				finalFile = afterPlatform // fall back
 				if log != nil {
 					_ = log.Write("CREATIVE_ASSEMBLE_CAPTIONS_FAILED", map[string]any{"plan_id": planID, "error": captErr.Error()})
 				}
@@ -343,7 +557,7 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 			}
 		}
 	} else {
-		finalFile = afterVoiceover
+		finalFile = afterPlatform
 	}
 
 	// if finalFile isn't draft.mp4, rename it
@@ -353,6 +567,13 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 			remuxArgs := []string{"-y", "-i", finalFile, "-c", "copy", draftPath}
 			if _, remuxErr := runner.Run(remuxArgs); remuxErr != nil {
 				warnings = append(warnings, fmt.Sprintf("could not finalize draft.mp4: %v", remuxErr))
+			}
+		}
+		// The assembled_video intermediate was renamed into draft.mp4. Update the stage
+		// record so validate-creative-assemble does not warn about a missing intermediate.
+		for i := range stages {
+			if stages[i].Name == "assembled_video" && stages[i].File == "outputs/draft_assembled.mp4" {
+				stages[i].File = "outputs/draft.mp4"
 			}
 		}
 	}
@@ -375,6 +596,14 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 		_ = log.Close()
 	}
 
+	// probe final draft dimensions
+	var finalProbe *AssembleFinalProbe
+	if overallStatus != "failed" {
+		if fp, fpErr := probeFullResult(draftPath); fpErr == nil {
+			finalProbe = fp
+		}
+	}
+
 	result := CreativeAssembleResult{
 		SchemaVersion:   "creative_assemble_result.v1",
 		CreatedAt:       time.Now().UTC(),
@@ -387,6 +616,8 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 		Clips:           assembledClips,
 		Captions:        captResult,
 		Voiceover:       voResult,
+		Platform:        platResult,
+		FinalProbe:      finalProbe,
 		Stages:          stages,
 		Warnings:        dedupeStrings(warnings),
 	}
@@ -431,11 +662,21 @@ func creativeAssembleWithRunner(planID string, stdout io.Writer, opts CreativeAs
 	fmt.Fprintf(stdout, "  status:    %s\n", overallStatus)
 	fmt.Fprintf(stdout, "  clips:     %d rendered\n", len(assembledClips))
 	fmt.Fprintf(stdout, "  output:    %s\n", draftPath)
+	if platResult != nil {
+		if platResult.Status == "applied" {
+			fmt.Fprintf(stdout, "  platform:  %s (%dx%d, fit=%s)\n", normPlatform, platPreset.Width, platPreset.Height, platFit)
+		} else {
+			fmt.Fprintf(stdout, "  platform:  %s (%s)\n", normPlatform, platResult.Status)
+		}
+	}
 	if captResult != nil {
 		fmt.Fprintf(stdout, "  captions:  %s\n", captResult.Status)
 	}
 	if voResult != nil {
 		fmt.Fprintf(stdout, "  voiceover: %s\n", voResult.Status)
+	}
+	if finalProbe != nil && finalProbe.Width > 0 {
+		fmt.Fprintf(stdout, "  final:     %dx%d\n", finalProbe.Width, finalProbe.Height)
 	}
 	for _, w := range dedupeStrings(warnings) {
 		fmt.Fprintf(stdout, "  warning:   %s\n", w)
@@ -472,10 +713,11 @@ func runClipAssembly(
 		args := buildClipArgs(mode, item.SourceStart, item.SourceEnd, sourcePath, workFile)
 		out, runErr := runner.Run(args)
 		if runErr != nil {
+			snippet := truncateStderr(out, 5, 400)
 			clip.Status = "failed"
-			clip.Error = strings.TrimSpace(string(out))
+			clip.Error = snippet
 			allOK = false
-			warnings = append(warnings, fmt.Sprintf("clip %s failed: %v", clip.ID, runErr))
+			warnings = append(warnings, fmt.Sprintf("clip %s failed: %v: %s", clip.ID, runErr, snippet))
 			if log != nil {
 				_ = log.Write("CREATIVE_ASSEMBLE_CLIP_RENDERED", map[string]any{"clip_id": clip.ID, "status": "failed"})
 			}
@@ -499,12 +741,13 @@ func runClipAssembly(
 		return clips, warnings, fmt.Errorf("creative-assemble: all clips failed")
 	}
 
-	// write concat list
+	// write concat list — use basename only; ffmpeg resolves paths relative to
+	// the concat list file location (render_work/), so using the full path would
+	// cause doubling when planDir is relative to CWD.
 	concatListPath := filepath.Join(workDir, "concat_list.txt")
 	var concatLines strings.Builder
 	for _, c := range completedClips {
-		absWork := filepath.Join(planDir, c.WorkFile)
-		fmt.Fprintf(&concatLines, "file '%s'\n", absWork)
+		fmt.Fprintf(&concatLines, "file '%s'\n", filepath.Base(c.WorkFile))
 	}
 	if err := os.WriteFile(concatListPath, []byte(concatLines.String()), 0o644); err != nil {
 		return clips, warnings, fmt.Errorf("write concat_list.txt: %w", err)
@@ -530,7 +773,7 @@ func runClipAssembly(
 	return clips, warnings, assembleErr
 }
 
-func writeFailedResult(resultPath, planID, mode string, clips []AssembledClip, warnings []string, capt *AssembleCaptionsResult, vo *AssembleVoiceoverResult, stages []AssembleStage) {
+func writeFailedResult(resultPath, planID, mode string, clips []AssembledClip, warnings []string, capt *AssembleCaptionsResult, vo *AssembleVoiceoverResult, plat *AssemblePlatformResult, stages []AssembleStage) {
 	_ = writeJSONFile(resultPath, CreativeAssembleResult{
 		SchemaVersion:   "creative_assemble_result.v1",
 		CreatedAt:       time.Now().UTC(),
@@ -543,6 +786,7 @@ func writeFailedResult(resultPath, planID, mode string, clips []AssembledClip, w
 		Clips:           clips,
 		Captions:        capt,
 		Voiceover:       vo,
+		Platform:        plat,
 		Stages:          stages,
 		Warnings:        dedupeStrings(warnings),
 	})
@@ -578,13 +822,14 @@ func buildVoiceoverArgs(videoIn, voiceoverIn, out string) []string {
 }
 
 // buildCaptionArgs burns SRT captions into video using FFmpeg subtitles filter.
-// The SRT path is escaped for the FFmpeg filter graph.
-func buildCaptionArgs(videoIn, srtPath, out string) []string {
+// forceStyle is the ASS force_style string (from buildForceStyleArg); empty means use defaults.
+func buildCaptionArgs(videoIn, srtPath, out, forceStyle string) []string {
 	escaped := escapeFilterPath(srtPath)
+	filterStr := buildCaptionFilterString(escaped, forceStyle)
 	return []string{
 		"-y",
 		"-i", videoIn,
-		"-vf", "subtitles=" + escaped,
+		"-vf", filterStr,
 		"-c:a", "copy",
 		out,
 	}
@@ -643,18 +888,35 @@ func relPath(planDir, abs string) string {
 	return rel
 }
 
-func printDryRun(stdout io.Writer, planID string, opts CreativeAssembleOptions, sourceClips []CreativeTimelineItem, sourcePath, workDir, assembledBase, draftPath, captPath, voPath string) {
+func printDryRun(
+	stdout io.Writer,
+	planID string,
+	opts CreativeAssembleOptions,
+	normPlatform string,
+	platPreset PlatformPreset,
+	platFit, platBackground string,
+	captPos string, captMargin int, captStyle, captForceStyle string,
+	sourceClips []CreativeTimelineItem,
+	sourcePath, workDir, assembledBase, draftPath, captPath, voPath string,
+) {
+	hasPlatform := normPlatform != "" && normPlatform != "original"
 	fmt.Fprintf(stdout, "creative-assemble dry-run: %s\n", planID)
 	fmt.Fprintf(stdout, "  mode:          %s\n", opts.Mode)
 	fmt.Fprintf(stdout, "  source:        %s\n", sourcePath)
 	fmt.Fprintf(stdout, "  clips:         %d\n", len(sourceClips))
 	fmt.Fprintf(stdout, "  work dir:      %s\n", workDir)
+	if hasPlatform {
+		fmt.Fprintf(stdout, "  platform:      %s (%dx%d, fit=%s)\n", normPlatform, platPreset.Width, platPreset.Height, platFit)
+	}
 	fmt.Fprintf(stdout, "  burn-captions: %v\n", opts.BurnCaptions)
 	fmt.Fprintf(stdout, "  mix-voiceover: %v\n", opts.MixVoiceover)
-	if captPath != "" {
-		fmt.Fprintf(stdout, "  captions:      %s\n", captPath)
-	} else if opts.BurnCaptions {
-		fmt.Fprintf(stdout, "  captions:      (not found — will skip with warning)\n")
+	if opts.BurnCaptions {
+		fmt.Fprintf(stdout, "  caption-pos:   %s (margin=%d, style=%s)\n", captPos, captMargin, captStyle)
+		if captPath != "" {
+			fmt.Fprintf(stdout, "  captions:      %s\n", captPath)
+		} else {
+			fmt.Fprintf(stdout, "  captions:      (not found — will skip with warning)\n")
+		}
 	}
 	if voPath != "" {
 		fmt.Fprintf(stdout, "  voiceover:     %s\n", voPath)
@@ -674,27 +936,37 @@ func printDryRun(stdout io.Writer, planID string, opts CreativeAssembleOptions, 
 	fmt.Fprintf(stdout, "  ffmpeg -y -f concat -safe 0 -i %s -c copy %s\n", concatList, assembledBase)
 
 	// voiceover
+	afterVoiceover := assembledBase
 	if opts.MixVoiceover && voPath != "" {
 		var voOut string
-		if opts.BurnCaptions {
+		if opts.BurnCaptions || hasPlatform {
 			voOut = filepath.Join(filepath.Dir(assembledBase), "draft_audio.mp4")
 		} else {
 			voOut = draftPath
 		}
 		voArgs := buildVoiceoverArgs(assembledBase, voPath, voOut)
 		fmt.Fprintf(stdout, "  ffmpeg %s  # voiceover mix\n", strings.Join(voArgs, " "))
+		afterVoiceover = voOut
+	}
+
+	// platform format
+	afterPlatform := afterVoiceover
+	if hasPlatform {
+		var platOut string
+		if opts.BurnCaptions {
+			platOut = filepath.Join(filepath.Dir(assembledBase), "draft_platform.mp4")
+		} else {
+			platOut = draftPath
+		}
+		platArgs := buildPlatformArgs(afterVoiceover, platOut, platPreset, platFit, platBackground)
+		fmt.Fprintf(stdout, "  ffmpeg %s  # platform format (%s)\n", strings.Join(platArgs, " "), normPlatform)
+		afterPlatform = platOut
 	}
 
 	// captions
 	if opts.BurnCaptions && captPath != "" {
-		var captIn string
-		if opts.MixVoiceover && voPath != "" {
-			captIn = filepath.Join(filepath.Dir(assembledBase), "draft_audio.mp4")
-		} else {
-			captIn = assembledBase
-		}
-		captArgs := buildCaptionArgs(captIn, captPath, draftPath)
-		fmt.Fprintf(stdout, "  ffmpeg %s  # caption burn\n", strings.Join(captArgs, " "))
+		captArgs := buildCaptionArgs(afterPlatform, captPath, draftPath, captForceStyle)
+		fmt.Fprintf(stdout, "  ffmpeg %s  # caption burn (pos=%s, style=%s)\n", strings.Join(captArgs, " "), captPos, captStyle)
 	}
 
 	fmt.Fprintln(stdout, "\nno files written (dry-run)")
@@ -777,7 +1049,26 @@ func ValidateCreativeAssemble(planID string, stdout io.Writer, opts ValidateCrea
 		}
 	}
 
-	// probe final draft if ffprobe available
+	// validate platform dimensions if platform was applied
+	if result.Platform != nil && result.Platform.Status == "applied" {
+		if _, err := os.Stat(draftPath); err == nil {
+			w, h, probeErr := probeVideoDimensions(draftPath)
+			if probeErr != nil {
+				warns = append(warns, fmt.Sprintf("ffprobe for platform dimension check failed: %v", probeErr))
+			} else if w == 0 && h == 0 {
+				warns = append(warns, "ffprobe not available; cannot verify platform dimensions")
+			} else {
+				if w != result.Platform.Width || h != result.Platform.Height {
+					errs = append(errs, fmt.Sprintf(
+						"platform dimension mismatch: expected %dx%d (%s), got %dx%d",
+						result.Platform.Width, result.Platform.Height, result.Platform.Normalized, w, h,
+					))
+				}
+			}
+		}
+	}
+
+	// probe final draft for duration if ffprobe available
 	if _, ferr := media.FindExecutable("ffprobe"); ferr == nil {
 		if _, err := os.Stat(draftPath); err == nil {
 			probeData, probeErr := media.Probe(draftPath)
@@ -817,8 +1108,21 @@ func ValidateCreativeAssemble(planID string, stdout io.Writer, opts ValidateCrea
 	fmt.Fprintf(stdout, "  plan id:  %s\n", planID)
 	fmt.Fprintf(stdout, "  status:   %s\n", result.Status)
 	fmt.Fprintf(stdout, "  mode:     %s\n", result.Mode)
+	if result.Platform != nil {
+		fmt.Fprintf(stdout, "  platform: %s (%s)\n", result.Platform.Normalized, result.Platform.Status)
+		if result.Platform.Status == "applied" {
+			fmt.Fprintf(stdout, "  expected: %dx%d\n", result.Platform.Width, result.Platform.Height)
+		}
+	}
+	if result.FinalProbe != nil && result.FinalProbe.Width > 0 {
+		fmt.Fprintf(stdout, "  actual:   %dx%d\n", result.FinalProbe.Width, result.FinalProbe.Height)
+	}
 	if result.Captions != nil {
 		fmt.Fprintf(stdout, "  captions: %s\n", result.Captions.Status)
+		if result.Captions.Status == "applied" && result.Captions.Position != "" {
+			fmt.Fprintf(stdout, "  caption-pos: %s (margin=%d, style=%s)\n",
+				result.Captions.Position, result.Captions.Margin, result.Captions.Style)
+		}
 	}
 	if result.Voiceover != nil {
 		fmt.Fprintf(stdout, "  voiceover:%s\n", result.Voiceover.Status)
@@ -870,12 +1174,31 @@ func ReviewCreativeAssemble(planID string, stdout io.Writer, opts ReviewCreative
 	fmt.Fprintf(&b, "- Work dir: `%s`\n", result.WorkDir)
 	fmt.Fprintf(&b, "- Clips: %d\n", len(result.Clips))
 
+	if result.Platform != nil {
+		fmt.Fprintf(&b, "- Platform: `%s` (%dx%d, fit=%s, status=%s)\n",
+			result.Platform.Normalized, result.Platform.Width, result.Platform.Height,
+			result.Platform.Fit, result.Platform.Status)
+		if result.Platform.Error != "" {
+			fmt.Fprintf(&b, "  - error: %s\n", result.Platform.Error)
+		}
+	}
+	if result.FinalProbe != nil && result.FinalProbe.Width > 0 {
+		fmt.Fprintf(&b, "- Final dimensions: `%dx%d` (%.2fs)\n",
+			result.FinalProbe.Width, result.FinalProbe.Height, result.FinalProbe.DurationSeconds)
+	}
 	if result.Captions != nil {
 		fmt.Fprintf(&b, "- Captions: `%s`", result.Captions.Status)
 		if result.Captions.SourcePath != "" {
 			fmt.Fprintf(&b, " (`%s`)", result.Captions.SourcePath)
 		}
 		b.WriteString("\n")
+		if result.Captions.Status == "applied" && result.Captions.Position != "" {
+			fmt.Fprintf(&b, "  - position: `%s`, margin: `%d`, style: `%s`\n",
+				result.Captions.Position, result.Captions.Margin, result.Captions.Style)
+		}
+		if result.Captions.FilterStyle != "" {
+			fmt.Fprintf(&b, "  - force_style: `%s`\n", result.Captions.FilterStyle)
+		}
 	}
 	if result.Voiceover != nil {
 		fmt.Fprintf(&b, "- Voiceover: `%s`", result.Voiceover.Status)

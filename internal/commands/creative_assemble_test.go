@@ -13,14 +13,16 @@ import (
 // ---- fake ffmpeg runner ----
 
 type fakeFFmpegRunner struct {
-	calls [][]string
-	err   error
+	calls          [][]string
+	err            error
+	hasSubtitles   bool // controls CheckFilter("subtitles")
+	filterOverride map[string]bool
 }
 
 func (f *fakeFFmpegRunner) Run(args []string) ([]byte, error) {
 	f.calls = append(f.calls, args)
 	if f.err != nil {
-		return []byte("fake ffmpeg error"), f.err
+		return []byte("fake ffmpeg error\nError parsing a filter description"), f.err
 	}
 	// create the output file so existence checks pass
 	if len(args) > 0 {
@@ -31,6 +33,18 @@ func (f *fakeFFmpegRunner) Run(args []string) ([]byte, error) {
 		}
 	}
 	return []byte("ok"), nil
+}
+
+func (f *fakeFFmpegRunner) CheckFilter(filter string) bool {
+	if f.filterOverride != nil {
+		if v, ok := f.filterOverride[filter]; ok {
+			return v
+		}
+	}
+	if filter == "subtitles" {
+		return f.hasSubtitles
+	}
+	return true // other filters available by default
 }
 
 // makeTimelineWithClips builds an approved plan with stub outputs and a timeline with real source clips.
@@ -569,7 +583,7 @@ func TestBuildVoiceoverArgs_UsesAmix(t *testing.T) {
 }
 
 func TestBuildCaptionArgs_UsesSubtitlesFilter(t *testing.T) {
-	args := buildCaptionArgs("/in/video.mp4", "/in/caps.srt", "/out/final.mp4")
+	args := buildCaptionArgs("/in/video.mp4", "/in/caps.srt", "/out/final.mp4", "")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "subtitles=") {
 		t.Fatalf("expected subtitles= filter in caption args: %v", args)
@@ -718,7 +732,7 @@ func TestCreativeAssemble_WithCaptionsFile(t *testing.T) {
 	captPath := filepath.Join(t.TempDir(), "captions.srt")
 	_ = os.WriteFile(captPath, []byte("1\n00:00:00,000 --> 00:00:05,000\nHello\n"), 0o644)
 
-	runner := &fakeFFmpegRunner{}
+	runner := &fakeFFmpegRunner{hasSubtitles: true}
 	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{
 		BurnCaptions: true,
 		CaptionsPath: captPath,
@@ -757,7 +771,7 @@ func TestCreativeAssemble_StagedResult_BothVoiceoverAndCaptions(t *testing.T) {
 	captPath := filepath.Join(t.TempDir(), "captions.srt")
 	_ = os.WriteFile(captPath, []byte("1\n00:00:00,000 --> 00:00:05,000\nHello\n"), 0o644)
 
-	runner := &fakeFFmpegRunner{}
+	runner := &fakeFFmpegRunner{hasSubtitles: true}
 	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{
 		MixVoiceover:  true,
 		VoiceoverPath: voPath,
@@ -833,6 +847,302 @@ func TestReviewCreativeAssemble_ShowsCaptionsVoiceover(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "voiceover") {
 		t.Fatalf("expected voiceover in review: %s", text)
+	}
+}
+
+// --- Prompt 046: subtitles preflight, stderr surfacing, timeline fallback tests ---
+
+func TestTruncateStderr_Short(t *testing.T) {
+	raw := []byte("line1\nline2\nline3")
+	got := truncateStderr(raw, 10, 4096)
+	if got != "line1\nline2\nline3" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestTruncateStderr_TruncatesLines(t *testing.T) {
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, fmt.Sprintf("line%d", i))
+	}
+	raw := []byte(strings.Join(lines, "\n"))
+	got := truncateStderr(raw, 5, 4096)
+	gotLines := strings.Split(got, "\n")
+	if len(gotLines) != 5 {
+		t.Fatalf("expected 5 lines, got %d: %q", len(gotLines), got)
+	}
+	if gotLines[0] != "line15" {
+		t.Fatalf("expected last 5 lines starting at line15, got %q", gotLines[0])
+	}
+}
+
+func TestTruncateStderr_TruncatesBytes(t *testing.T) {
+	raw := []byte(strings.Repeat("x", 1000))
+	got := truncateStderr(raw, 100, 200)
+	if len(got) > 203 { // 200 + "..." prefix
+		t.Fatalf("expected <= 203 bytes, got %d", len(got))
+	}
+	if !strings.HasPrefix(got, "...") {
+		t.Fatalf("expected '...' prefix for truncated output: %q", got[:20])
+	}
+}
+
+func TestCreativeAssemble_SubtitlesFilterMissing_NoAllowFlag_Fails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	input := filepath.Join(t.TempDir(), "test.mov")
+	_ = os.WriteFile(input, []byte("stub-video"), 0o644)
+	planID := makeTimelineWithClips(t, input)
+
+	captPath := filepath.Join(t.TempDir(), "captions.srt")
+	_ = os.WriteFile(captPath, []byte("1\n00:00:00,000 --> 00:00:05,000\nHello\n"), 0o644)
+
+	runner := &fakeFFmpegRunner{hasSubtitles: false}
+	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{
+		BurnCaptions: true,
+		CaptionsPath: captPath,
+	}, runner)
+	if err == nil {
+		t.Fatal("expected error when subtitles filter unavailable and --allow-missing-captions not set")
+	}
+	if !strings.Contains(err.Error(), "subtitles filter") {
+		t.Fatalf("expected mention of subtitles filter in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "libass") {
+		t.Fatalf("expected mention of libass in error: %v", err)
+	}
+}
+
+func TestCreativeAssemble_SubtitlesFilterMissing_AllowFlag_Skips(t *testing.T) {
+	t.Chdir(t.TempDir())
+	input := filepath.Join(t.TempDir(), "test.mov")
+	_ = os.WriteFile(input, []byte("stub-video"), 0o644)
+	planID := makeTimelineWithClips(t, input)
+
+	captPath := filepath.Join(t.TempDir(), "captions.srt")
+	_ = os.WriteFile(captPath, []byte("1\n00:00:00,000 --> 00:00:05,000\nHello\n"), 0o644)
+
+	runner := &fakeFFmpegRunner{hasSubtitles: false}
+	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{
+		BurnCaptions:         true,
+		CaptionsPath:         captPath,
+		AllowMissingCaptions: true,
+	}, runner)
+	if err != nil {
+		t.Fatalf("expected success with --allow-missing-captions: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(creativePlansRoot, planID, "outputs", "creative_assemble_result.json"))
+	var result CreativeAssembleResult
+	_ = json.Unmarshal(data, &result)
+	if result.Captions == nil || result.Captions.Status != "skipped" {
+		t.Fatalf("expected captions.status=skipped when subtitles filter missing, got %+v", result.Captions)
+	}
+	// warning must mention libass
+	foundLibass := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "libass") || strings.Contains(w, "subtitles filter") {
+			foundLibass = true
+		}
+	}
+	if !foundLibass {
+		t.Fatalf("expected libass/subtitles warning, got: %v", result.Warnings)
+	}
+	// draft.mp4 should still exist (assembled fallback)
+	if _, err := os.Stat(filepath.Join(creativePlansRoot, planID, "outputs", "draft.mp4")); err != nil {
+		t.Fatal("draft.mp4 should exist even when caption burn skipped")
+	}
+}
+
+func TestCreativeAssemble_SubtitlesFilterPresent_Applies(t *testing.T) {
+	t.Chdir(t.TempDir())
+	input := filepath.Join(t.TempDir(), "test.mov")
+	_ = os.WriteFile(input, []byte("stub-video"), 0o644)
+	planID := makeTimelineWithClips(t, input)
+
+	captPath := filepath.Join(t.TempDir(), "captions.srt")
+	_ = os.WriteFile(captPath, []byte("1\n00:00:00,000 --> 00:00:05,000\nHello\n"), 0o644)
+
+	runner := &fakeFFmpegRunner{hasSubtitles: true}
+	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{
+		BurnCaptions: true,
+		CaptionsPath: captPath,
+	}, runner)
+	if err != nil {
+		t.Fatalf("assemble error: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(creativePlansRoot, planID, "outputs", "creative_assemble_result.json"))
+	var result CreativeAssembleResult
+	_ = json.Unmarshal(data, &result)
+	if result.Captions == nil || result.Captions.Status != "applied" {
+		t.Fatalf("expected captions.status=applied, got %+v", result.Captions)
+	}
+}
+
+func TestCreativeAssemble_FFmpegStderrInError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	input := filepath.Join(t.TempDir(), "test.mov")
+	_ = os.WriteFile(input, []byte("stub-video"), 0o644)
+	planID := makeTimelineWithClips(t, input)
+
+	runner := &fakeFFmpegRunner{err: fmt.Errorf("exit status 1")}
+	err := creativeAssembleWithRunner(planID, ioDiscard{}, CreativeAssembleOptions{}, runner)
+	if err == nil {
+		t.Fatal("expected error from failed ffmpeg")
+	}
+	// The per-clip stderr is recorded in result.Warnings and clip.Error.
+	// The top-level error indicates all clips failed.
+	if !strings.Contains(err.Error(), "clips failed") {
+		t.Fatalf("expected 'clips failed' in error, got: %v", err)
+	}
+	// The result artifact should contain the stderr snippet in warnings
+	resultData, _ := os.ReadFile(filepath.Join(creativePlansRoot, planID, "outputs", "creative_assemble_result.json"))
+	var result CreativeAssembleResult
+	_ = json.Unmarshal(resultData, &result)
+	foundStderr := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "fake ffmpeg error") || strings.Contains(w, "filter description") {
+			foundStderr = true
+		}
+	}
+	for _, c := range result.Clips {
+		if strings.Contains(c.Error, "fake ffmpeg error") || strings.Contains(c.Error, "filter description") {
+			foundStderr = true
+		}
+	}
+	if !foundStderr {
+		t.Fatalf("expected ffmpeg stderr snippet in result warnings or clip errors; warnings=%v clips=%v", result.Warnings, result.Clips)
+	}
+}
+
+// --- Prompt 046: creative-timeline fallback tests ---
+
+func TestCreativeTimeline_DefaultFallsBackToRoughcut(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	// create a run with only roughcut.json (no selected_clips.json)
+	runID := "test-run-roughcut-only"
+	runDir := filepath.Join(".byom-video", "runs", runID)
+	_ = os.MkdirAll(runDir, 0o755)
+	roughcut := map[string]any{
+		"schema_version": "roughcut.v1",
+		"clips": []map[string]any{
+			{"id": "clip_0001", "start": 10.0, "end": 15.0, "duration_seconds": 5.0, "text": "hello"},
+		},
+	}
+	if err := writeJSONFile(filepath.Join(runDir, "roughcut.json"), roughcut); err != nil {
+		t.Fatal(err)
+	}
+	_ = writeJSONFile(filepath.Join(runDir, "manifest.json"), map[string]any{
+		"schema_version": "manifest.v1",
+		"run_id":         runID,
+		"input_path":     "/tmp/test.mov",
+	})
+
+	planID := makeApprovedStubPlan(t, "cinematic short")
+	if err := CreativeExecuteStub(planID, ioDiscard{}, CreativeExecuteStubOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err := CreativeTimeline(planID, &out, CreativeTimelineOptions{RunID: runID})
+	if err != nil {
+		t.Fatalf("creative-timeline error: %v", err)
+	}
+
+	// read the timeline artifact and confirm clips were loaded
+	tlData, _ := os.ReadFile(filepath.Join(creativePlansRoot, planID, "outputs", "creative_timeline.json"))
+	var tl CreativeTimelineArtifact
+	_ = json.Unmarshal(tlData, &tl)
+
+	clipCount := 0
+	for _, track := range tl.Tracks {
+		if track.ID == "track_video_main" {
+			for _, item := range track.Items {
+				if item.Kind == "source_clip" {
+					clipCount++
+				}
+			}
+		}
+	}
+	if clipCount == 0 {
+		t.Fatalf("expected clips from roughcut.json fallback, got 0; output: %s", out.String())
+	}
+}
+
+func TestCreativeTimeline_NoSourceWarningListsCheckedFiles(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	// run with no clip artifacts at all
+	runID := "test-run-no-clips"
+	runDir := filepath.Join(".byom-video", "runs", runID)
+	_ = os.MkdirAll(runDir, 0o755)
+	_ = writeJSONFile(filepath.Join(runDir, "manifest.json"), map[string]any{
+		"schema_version": "manifest.v1",
+		"run_id":         runID,
+		"input_path":     "/tmp/test.mov",
+	})
+
+	planID := makeApprovedStubPlan(t, "cinematic short")
+	if err := CreativeExecuteStub(planID, ioDiscard{}, CreativeExecuteStubOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = CreativeTimeline(planID, &out, CreativeTimelineOptions{RunID: runID})
+
+	text := out.String()
+	// warning must list checked artifacts
+	for _, name := range []string{"selected_clips.json", "roughcut.json"} {
+		if !strings.Contains(text, name) {
+			t.Fatalf("expected %q listed in no-clips warning; output: %s", name, text)
+		}
+	}
+}
+
+func TestCreativeTimeline_PreferGoalFallsBackToRoughcut(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	runID := "test-run-roughcut-prefer-goal"
+	runDir := filepath.Join(".byom-video", "runs", runID)
+	_ = os.MkdirAll(runDir, 0o755)
+	roughcut := map[string]any{
+		"schema_version": "roughcut.v1",
+		"clips": []map[string]any{
+			{"id": "clip_0001", "start": 5.0, "end": 10.0, "duration_seconds": 5.0, "text": "test"},
+		},
+	}
+	_ = writeJSONFile(filepath.Join(runDir, "roughcut.json"), roughcut)
+	_ = writeJSONFile(filepath.Join(runDir, "manifest.json"), map[string]any{
+		"schema_version": "manifest.v1",
+		"run_id":         runID,
+		"input_path":     "/tmp/test.mov",
+	})
+
+	planID := makeApprovedStubPlan(t, "cinematic short")
+	if err := CreativeExecuteStub(planID, ioDiscard{}, CreativeExecuteStubOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := CreativeTimeline(planID, ioDiscard{}, CreativeTimelineOptions{RunID: runID, PreferGoal: true})
+	if err != nil {
+		t.Fatalf("creative-timeline --prefer-goal error: %v", err)
+	}
+
+	tlData, _ := os.ReadFile(filepath.Join(creativePlansRoot, planID, "outputs", "creative_timeline.json"))
+	var tl CreativeTimelineArtifact
+	_ = json.Unmarshal(tlData, &tl)
+
+	clipCount := 0
+	for _, track := range tl.Tracks {
+		if track.ID == "track_video_main" {
+			for _, item := range track.Items {
+				if item.Kind == "source_clip" {
+					clipCount++
+				}
+			}
+		}
+	}
+	if clipCount == 0 {
+		t.Fatalf("expected --prefer-goal to fall back to roughcut.json, got 0 clips")
 	}
 }
 

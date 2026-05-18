@@ -42,6 +42,7 @@ go install github.com/mirelahmd/byom-video/cmd/byom-video@latest
 ```sh
 # Check dependencies
 byom-video doctor
+byom-video doctor --media   # also checks ffmpeg filter availability (subtitles, amix)
 
 # Initialize workspace
 byom-video init
@@ -56,12 +57,41 @@ BYOM_VIDEO_PYTHON=~/.byom-venv/bin/python byom-video pipeline media/clip.mov --p
 byom-video runs
 byom-video inspect <run_id>
 byom-video export <run_id>
+
+# High-level agentic create flow
+byom-video create media/clip.mov --goal "Make a 35-second luxury fitness Instagram Reel with bold lower-third captions" --write-review
+byom-video create-result <create_session_id>
+byom-video create-sessions
+byom-video inspect-create-session <create_session_id>
+byom-video visual-requests <agent_plan_id> --overwrite
+byom-video execute-visual-requests <agent_plan_id> --yes --allow-provider-calls --allow-external-network
+
+# One-command creator flow (plan only, no --yes):
+BYOM_VIDEO_PYTHON=~/.byom-venv/bin/python byom-video make media/clip.mov --goal "make a short cinematic clip with captions"
+
+# One-command creator flow (end-to-end, --yes):
+BYOM_VIDEO_PYTHON=~/.byom-venv/bin/python byom-video make media/clip.mov \
+  --goal "make a short cinematic clip with captions" \
+  --yes --burn-captions --allow-missing-captions
+
+# Reuse existing pipeline run (skip re-transcribing):
+byom-video make --goal "make a cinematic short" \
+  --skip-pipeline <run_id> --yes --burn-captions --allow-missing-captions
+
+# Review result:
+byom-video makes
+byom-video make-result <make_id>
+byom-video inspect-make <make_id>
 ```
 
 ## What It Does
 
 | Area | Commands |
 |---|---|
+| Creator flow | `make`, `makes`, `inspect-make`, `make-result` |
+| Agentic create | `create`, `create-result`, `create-sessions`, `inspect-create-session` |
+| Visual dry-runs | `visual-requests` |
+| Visual execution | `execute-visual-requests`, `review-visual-generation` |
 | Pipeline | `pipeline`, `run`, `batch`, `watch` |
 | Inspection | `inspect`, `artifacts`, `validate`, `open-report` |
 | Export | `export`, `ffmpeg-script`, `export-manifest`, `concat-plan` |
@@ -76,6 +106,12 @@ byom-video export <run_id>
 | Creative stub execution | `creative-execute-stub`, `review-creative-outputs` |
 | Creative timeline | `creative-timeline`, `creative-render-plan`, `review-creative-timeline` |
 | Creative assemble | `creative-assemble`, `validate-creative-assemble`, `review-creative-assemble` |
+| Script generation | `creative-generate-script`, `review-script` |
+| Style pack | `style init`, `style inspect`, `style validate` |
+| Job worker | `job-worker` |
+| Daemon | `daemon start`, `daemon stop`, `daemon status`, `daemon logs` |
+| Queue health | `queue`, `queue health` |
+| Agent plan v1 | `agent-plan`, `agent-plans`, `inspect-agent-plan`, `review-agent-plan`, `agent-policy` |
 
 ## Local Model Setup (Optional)
 
@@ -125,18 +161,55 @@ After a goal-aware run completes, export-facing handoff can explicitly prefer th
 
 `--goal-use-ollama` is explicit. BYOM Video does not call Ollama from normal pipeline or plan execution unless the plan or command requests it.
 
+## Style Pack (Ollama Script Generation)
+
+BYOM Video supports local Ollama-powered script generation using a **Style Pack** — a directory of Markdown files that describe your creator voice, visual preferences, and brand rules.
+
+```sh
+# Set up your style pack
+byom-video style init
+# Edit .openvfx/style/{profile,script_style,captions,visual_style,do_not_do,examples}.md
+byom-video style validate
+
+# Generate a script from a creative plan using your local Ollama
+byom-video creative-generate-script <creative_plan_id> [--style-dir <path>] [--no-style]
+byom-video review-script <creative_plan_id> --write-artifact
+
+# Or combine with make:
+byom-video make input.mov --goal "make a cinematic short" --yes --generate-script
+```
+
+Requires an Ollama backend configured in `byom-video.yaml`:
+
+```yaml
+tools:
+  enabled: true
+  backends:
+    local_writer:
+      kind: text_generation
+      provider: ollama
+      model: qwen2.5:7b
+      endpoint: http://localhost:11434
+      auth:
+        type: none
+  routes:
+    creative.script: local_writer
+```
+
+See [docs/style-pack.md](docs/style-pack.md) for full documentation.
+
 ## Creative Capability Registry
 
-BYOM Video now includes a provider-agnostic `tools` registry for future creative-agent workflows such as:
+BYOM Video includes a provider-agnostic `tools` registry for creative-agent workflows such as:
 
-- script generation
+- script generation (via Ollama — live)
 - voice generation
 - image or video generation
 - caption generation
 - music or sound generation
 - render composition
 
-This layer is config, validation, and planning only. It does not call providers.
+This layer is config, validation, and planning. Only Ollama text generation is currently implemented as a live provider call.
 
 ```sh
 ./byom-video tools
@@ -171,6 +244,105 @@ This layer is config, validation, and planning only. It does not call providers.
 ./byom-video validate-creative-assemble <creative_plan_id>
 ./byom-video review-creative-assemble <creative_plan_id> --write-artifact
 ```
+
+## Job Worker
+
+Prompt 057 adds the first foreground worker for the local job queue:
+
+```sh
+./byom-video job-worker --status
+./byom-video job-worker --once
+./byom-video job-worker --once --dry-run
+./byom-video job-worker --loop --interval 10s --max-jobs 5
+./byom-video job-worker --once --force-lock
+```
+
+It scans approved pending jobs, selects the oldest eligible job first, and runs jobs sequentially through the existing `job-run` path.
+
+## Daemon Lifecycle
+
+Prompt 058 adds an optional local background wrapper around `job-worker --loop`:
+
+```sh
+./byom-video daemon start --interval 10s --reset-log
+./byom-video daemon status
+./byom-video daemon logs --lines 40
+./byom-video daemon stop
+```
+
+This daemon:
+
+- only manages the worker process lifecycle
+- writes PID, state, log, and daemon event artifacts
+- does not add planner logic
+- still respects the existing job approval gate
+
+## Queue Runtime Health
+
+Prompt 059 adds a single runtime summary for daemon, worker, and jobs:
+
+```sh
+./byom-video queue
+./byom-video queue --json
+./byom-video queue health
+./byom-video queue health --write-report
+```
+
+This view highlights:
+
+- jobs needing approval
+- failed jobs
+- stale daemon PID state
+- stale worker lock state
+- stale running jobs
+- next commands such as `daemon start`, `job-approve`, and `job-result`
+
+## Agent Plan Contract v1
+
+Prompt 060 adds a deterministic planner that observes local runtime and proposes typed OpenVFX actions without executing anything:
+
+```sh
+./byom-video agent-plan --goal "queue health"
+./byom-video agent-plan --input media/Untitled.mov --goal "make a vertical short with captions and narration" --write-review
+./byom-video agent-plans
+./byom-video inspect-agent-plan <plan_id>
+./byom-video review-agent-plan <plan_id> --write-artifact
+./byom-video agent-policy <plan_id>
+./byom-video approve-agent-plan <plan_id>
+./byom-video agent-plan-to-job <plan_id> --dry-run
+./byom-video agent-plan-to-job <plan_id> --approve-jobs
+./byom-video agent-plan-jobs <plan_id>
+./byom-video agent-run <plan_id> --dry-run
+./byom-video agent-run <plan_id> --yes --convert --approve-jobs
+./byom-video agent-result <plan_id> --write-artifact
+./byom-video agent-orchestrate --input media/Untitled.mov --goal "Make a 35-second luxury fitness Instagram Reel with bold lower-third captions"
+```
+
+This writes compact plan artifacts under `.byom-video/agent_plans/`:
+
+- `agent_plan.json`
+- `context_snapshot.json`
+- `policy_review.json`
+- `plan_review.md`
+
+It is planning only:
+
+- no provider calls
+- no job creation
+- no execution
+- no LangGraph or LLM planner yet
+
+Prompt 061 adds approval and conversion into durable jobs. Prompt 062 adds `agent-run` and `agent-result` as a safer bridge/result layer. Jobs are not run unless you explicitly use `job-run`, `job-worker`, `daemon`, or `agent-run --run-jobs` / `--worker-once` / `--start-daemon`.
+
+Prompt 066 adds Creative Brief Intelligence. Rich creator prompts now produce `creative_brief.json`, `deliverables.json`, and `asset_requirements.json` alongside the agent plan. `agent-orchestrate` creates those artifacts and runs the LangGraph review sidecar without executing jobs.
+
+Prompt 067 adds `create`, a scoped high-level creator flow. By default it is preview-only. With `--yes --approval-scope local --convert --approve-jobs`, it can approve and convert the scoped plan into local jobs. Provider calls still require `--approval-scope provider --allow-provider-calls --allow-external-network`.
+
+Prompt 068 upgrades the create review/result surface. `create_review.md` now summarizes the creative brief, deliverables, asset requirements, capability gaps, graph/plan state, linked jobs, outputs, and next commands.
+
+Prompt 069 adds provider-agnostic visual generation dry-runs. Visual requirements such as generated b-roll, generated images, style transfer, object removal, background replacement, and visual transforms are resolved through `tools.routes` keys like `creative.broll_generate`, `creative.image_generate`, and `creative.visual_transform`. `visual_requests.dryrun.json` shows the future request preview without calling providers or printing secret values.
+
+Prompt 070 adds `custom-http-visual` execution for user-configured visual backends. It requires explicit `--yes --allow-provider-calls --allow-external-network`, writes `generated_assets.json`, saves generated outputs under the agent plan directory, and writes scrubbed request/response audit artifacts. No official provider SDKs or provider-specific adapters are hardcoded.
 
 Backend names, provider strings, route keys, endpoints, and options are all user-defined. Secrets should stay in env vars. Commands only print env var names, never values.
 

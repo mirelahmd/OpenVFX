@@ -91,14 +91,31 @@ type ToolsConfig struct {
 }
 
 type ToolBackendConfig struct {
-	Kind            string         `json:"kind"`
-	Provider        string         `json:"provider"`
-	Model           string         `json:"model,omitempty"`
-	Endpoint        string         `json:"endpoint,omitempty"`
-	Auth            ToolAuthConfig `json:"auth"`
-	Options         map[string]any `json:"options,omitempty"`
-	RequestTemplate string         `json:"request_template,omitempty"`
-	ResponseMapping map[string]any `json:"response_mapping,omitempty"`
+	Kind            string             `json:"kind"`
+	Provider        string             `json:"provider"`
+	Model           string             `json:"model,omitempty"`
+	Endpoint        string             `json:"endpoint,omitempty"`
+	Auth            ToolAuthConfig     `json:"auth"`
+	Options         map[string]any     `json:"options,omitempty"`
+	Request         ToolRequestConfig  `json:"request,omitempty"`
+	Response        ToolResponseConfig `json:"response,omitempty"`
+	RequestTemplate string             `json:"request_template,omitempty"`
+	ResponseMapping map[string]any     `json:"response_mapping,omitempty"`
+}
+
+type ToolRequestConfig struct {
+	Method       string            `json:"method,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	BodyTemplate map[string]any    `json:"body_template,omitempty"`
+}
+
+type ToolResponseConfig struct {
+	Mode                 string `json:"mode,omitempty"`
+	OutputURLJSONPath    string `json:"output_url_json_path,omitempty"`
+	OutputBase64JSONPath string `json:"output_base64_json_path,omitempty"`
+	OutputBytesJSONPath  string `json:"output_bytes_json_path,omitempty"`
+	StatusJSONPath       string `json:"status_json_path,omitempty"`
+	ErrorJSONPath        string `json:"error_json_path,omitempty"`
 }
 
 type ToolAuthConfig struct {
@@ -439,6 +456,52 @@ func setValue(cfg *Config, section string, key string, value string) {
 			cfg.Tools.Backends[backendName] = backend
 			return
 		}
+		if backendName, headerKey, ok := toolMapPath(section, "tools.backends.", ".request.headers", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			if backend.Request.Headers == nil {
+				backend.Request.Headers = map[string]string{}
+			}
+			backend.Request.Headers[headerKey] = value
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, bodyKey, ok := toolMapPath(section, "tools.backends.", ".request.body_template", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			if backend.Request.BodyTemplate == nil {
+				backend.Request.BodyTemplate = map[string]any{}
+			}
+			backend.Request.BodyTemplate[bodyKey] = parseScalar(value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, requestKey, ok := toolMapPath(section, "tools.backends.", ".request", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			setToolRequestValue(&backend.Request, requestKey, value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
+		if backendName, responseKey, ok := toolMapPath(section, "tools.backends.", ".response", key); ok {
+			cfg.Tools.Present = true
+			if cfg.Tools.Backends == nil {
+				cfg.Tools.Backends = map[string]ToolBackendConfig{}
+			}
+			backend := cfg.Tools.Backends[backendName]
+			setToolResponseValue(&backend.Response, responseKey, value)
+			cfg.Tools.Backends[backendName] = backend
+			return
+		}
 		if backendName, authKey, ok := toolMapPath(section, "tools.backends.", ".auth", key); ok {
 			cfg.Tools.Present = true
 			if cfg.Tools.Backends == nil {
@@ -458,6 +521,30 @@ func setValue(cfg *Config, section string, key string, value string) {
 			setToolBackendValue(&backend, key, value)
 			cfg.Tools.Backends[backendName] = backend
 		}
+	}
+}
+
+func setToolRequestValue(request *ToolRequestConfig, key string, value string) {
+	switch key {
+	case "method":
+		request.Method = value
+	}
+}
+
+func setToolResponseValue(response *ToolResponseConfig, key string, value string) {
+	switch key {
+	case "mode":
+		response.Mode = value
+	case "output_url_json_path":
+		response.OutputURLJSONPath = value
+	case "output_base64_json_path":
+		response.OutputBase64JSONPath = value
+	case "output_bytes_json_path":
+		response.OutputBytesJSONPath = value
+	case "status_json_path":
+		response.StatusJSONPath = value
+	case "error_json_path":
+		response.ErrorJSONPath = value
 	}
 }
 

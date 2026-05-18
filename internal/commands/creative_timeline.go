@@ -46,7 +46,7 @@ type CreativeTimelineItem struct {
 	Kind          string  `json:"kind"`
 	TimelineStart float64 `json:"timeline_start"`
 	TimelineEnd   float64 `json:"timeline_end"`
-	SourceStart   float64 `json:"source_start,omitempty"`
+	SourceStart   float64 `json:"source_start"`
 	SourceEnd     float64 `json:"source_end,omitempty"`
 	Text          string  `json:"text,omitempty"`
 	Label         string  `json:"label,omitempty"`
@@ -258,23 +258,24 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 			return fmt.Errorf("run %q: %w", opts.RunID, err)
 		}
 
-		// preference order for clip source
-		candidates := []struct {
-			name string
-			path string
-		}{
+		// preference order for clip source.
+		// Default: selected_clips → goal_roughcut → enhanced_roughcut → roughcut
+		// --prefer-goal: goal_roughcut → selected_clips → enhanced_roughcut → roughcut
+		defaultCandidates := []struct{ name, path string }{
 			{"selected_clips.json", filepath.Join(runDir, "selected_clips.json")},
+			{"goal_roughcut.json", filepath.Join(runDir, "goal_roughcut.json")},
+			{"enhanced_roughcut.json", filepath.Join(runDir, "enhanced_roughcut.json")},
+			{"roughcut.json", filepath.Join(runDir, "roughcut.json")},
 		}
+		preferGoalCandidates := []struct{ name, path string }{
+			{"goal_roughcut.json", filepath.Join(runDir, "goal_roughcut.json")},
+			{"selected_clips.json", filepath.Join(runDir, "selected_clips.json")},
+			{"enhanced_roughcut.json", filepath.Join(runDir, "enhanced_roughcut.json")},
+			{"roughcut.json", filepath.Join(runDir, "roughcut.json")},
+		}
+		candidates := defaultCandidates
 		if opts.PreferGoal {
-			candidates = []struct {
-				name string
-				path string
-			}{
-				{"goal_roughcut.json", filepath.Join(runDir, "goal_roughcut.json")},
-				{"enhanced_roughcut.json", filepath.Join(runDir, "enhanced_roughcut.json")},
-				{"roughcut.json", filepath.Join(runDir, "roughcut.json")},
-				{"selected_clips.json", filepath.Join(runDir, "selected_clips.json")},
-			}
+			candidates = preferGoalCandidates
 		}
 
 		for _, c := range candidates {
@@ -285,7 +286,10 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 			}
 		}
 		if len(clips) == 0 {
-			warnings = append(warnings, fmt.Sprintf("run %q: no usable clip artifact found; timeline will have empty video track", opts.RunID))
+			warnings = append(warnings, fmt.Sprintf(
+				"run %q: no usable clip artifact found (checked selected_clips.json, goal_roughcut.json, enhanced_roughcut.json, roughcut.json); "+
+					"run `byom-video pipeline --preset shorts` or `byom-video selected-clips %s` first",
+				opts.RunID, opts.RunID))
 		}
 	}
 

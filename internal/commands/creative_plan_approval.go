@@ -459,6 +459,38 @@ func CreativeResult(planID string, stdout io.Writer, opts CreativeResultOptions)
 		nextCmds = append(nextCmds, fmt.Sprintf("byom-video review-creative-assemble %s", planID2))
 	}
 
+	// read script_draft.json if present
+	scriptMode, scriptModel, scriptWords := "", "", 0
+	scriptStyleUsed := false
+	scriptDraftPath := filepath.Join(planDir, "outputs", "script_draft.json")
+	if sdData, err := os.ReadFile(scriptDraftPath); err == nil {
+		var sd CreativeScriptOutput
+		if json.Unmarshal(sdData, &sd) == nil {
+			scriptMode = sd.Mode
+			scriptModel = sd.Model
+			scriptWords = wordCount(sd.Text)
+			if sd.StyleContext != nil && sd.StyleContext.Enabled {
+				scriptStyleUsed = true
+			}
+		}
+	}
+
+	// read caption_variants.json if present
+	captionMode, captionModel, captionCount := "", "", 0
+	captionStyleUsed := false
+	captionVariantsPath := filepath.Join(planDir, "outputs", "caption_variants.json")
+	if cvData, err := os.ReadFile(captionVariantsPath); err == nil {
+		var cv CaptionVariantsOutput
+		if json.Unmarshal(cvData, &cv) == nil {
+			captionMode = cv.Mode
+			captionModel = cv.Model
+			captionCount = len(cv.Variants)
+			if cv.StyleContext != nil && cv.StyleContext.Enabled {
+				captionStyleUsed = true
+			}
+		}
+	}
+
 	// read assemble result for draft path and media enrichments
 	var draftPath string
 	var captionsStatus, voiceoverStatus string
@@ -481,17 +513,25 @@ func CreativeResult(planID string, stdout io.Writer, opts CreativeResultOptions)
 	}
 
 	result := map[string]any{
-		"plan_id":           planID2,
-		"goal":              goal,
-		"approval_status":   approvalStatus,
-		"execution_status":  executionStatus,
-		"preview_artifact":  previewArtifact,
-		"output_artifacts":  len(outputArtifacts),
-		"draft_path":        draftPath,
-		"captions_status":   captionsStatus,
-		"voiceover_status":  voiceoverStatus,
-		"missing":           missing,
-		"next_commands":     nextCmds,
+		"plan_id":              planID2,
+		"goal":                 goal,
+		"approval_status":      approvalStatus,
+		"execution_status":     executionStatus,
+		"preview_artifact":     previewArtifact,
+		"output_artifacts":     len(outputArtifacts),
+		"draft_path":           draftPath,
+		"captions_status":      captionsStatus,
+		"voiceover_status":     voiceoverStatus,
+		"script_mode":          scriptMode,
+		"script_model":         scriptModel,
+		"script_words":         scriptWords,
+		"script_style_used":    scriptStyleUsed,
+		"caption_mode":         captionMode,
+		"caption_model":        captionModel,
+		"caption_count":        captionCount,
+		"caption_style_used":   captionStyleUsed,
+		"missing":              missing,
+		"next_commands":        nextCmds,
 	}
 
 	if opts.WriteArtifact {
@@ -559,6 +599,20 @@ func CreativeResult(planID string, stdout io.Writer, opts CreativeResultOptions)
 		for _, a := range outputArtifacts {
 			fmt.Fprintf(stdout, "    %s: %s\n", a.Type, a.Path)
 		}
+	}
+	if scriptMode != "" {
+		styleTag := ""
+		if scriptStyleUsed {
+			styleTag = " +style"
+		}
+		fmt.Fprintf(stdout, "  script:           %s/%s (%d words)%s\n", scriptMode, scriptModel, scriptWords, styleTag)
+	}
+	if captionMode != "" {
+		styleTag := ""
+		if captionStyleUsed {
+			styleTag = " +style"
+		}
+		fmt.Fprintf(stdout, "  caption variants: %s/%s (%d)%s\n", captionMode, captionModel, captionCount, styleTag)
 	}
 	if draftPath != "" {
 		fmt.Fprintf(stdout, "  draft:            %s\n", draftPath)
@@ -759,6 +813,83 @@ func ValidateCreativePlan(planID string, stdout io.Writer, opts ValidateCreative
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// validate outputs/script_draft.json if present
+	scriptDraftPath := filepath.Join(planDir, "outputs", "script_draft.json")
+	if data, err := os.ReadFile(scriptDraftPath); err == nil {
+		var sd map[string]any
+		if err := json.Unmarshal(data, &sd); err != nil {
+			errs = append(errs, "outputs/script_draft.json is not valid JSON")
+		} else {
+			sv, _ := sd["schema_version"].(string)
+			if sv != "creative_script.v1" {
+				errs = append(errs, fmt.Sprintf("outputs/script_draft.json: unexpected schema_version %q", sv))
+			}
+			if txt, _ := sd["text"].(string); strings.TrimSpace(txt) == "" {
+				warnings = append(warnings, "outputs/script_draft.json: text field is empty")
+			}
+		}
+	}
+
+	// validate outputs/voiceover_text.json if present
+	voiceoverTextPath := filepath.Join(planDir, "outputs", "voiceover_text.json")
+	if data, err := os.ReadFile(voiceoverTextPath); err == nil {
+		var vt map[string]any
+		if json.Unmarshal(data, &vt) != nil {
+			errs = append(errs, "outputs/voiceover_text.json is not valid JSON")
+		} else {
+			sv, _ := vt["schema_version"].(string)
+			if sv != "voiceover_text.v1" {
+				errs = append(errs, fmt.Sprintf("outputs/voiceover_text.json: unexpected schema_version %q", sv))
+			}
+			text, _ := vt["text"].(string)
+			if strings.TrimSpace(text) == "" {
+				warnings = append(warnings, "outputs/voiceover_text.json: text field is empty")
+			}
+			wcRaw, _ := vt["word_count"].(float64)
+			if wcRaw < 0 {
+				errs = append(errs, fmt.Sprintf("outputs/voiceover_text.json: word_count=%d is negative", int(wcRaw)))
+			}
+			if srcRaw, ok := vt["source"].(map[string]any); ok {
+				if srcRaw["source_type"] == nil || srcRaw["source_type"] == "" {
+					errs = append(errs, "outputs/voiceover_text.json: source.source_type is missing")
+				}
+			}
+		}
+	}
+
+	// validate outputs/caption_variants.json if present
+	captionVariantsPath := filepath.Join(planDir, "outputs", "caption_variants.json")
+	if data, err := os.ReadFile(captionVariantsPath); err == nil {
+		var cv map[string]any
+		if err := json.Unmarshal(data, &cv); err != nil {
+			errs = append(errs, "outputs/caption_variants.json is not valid JSON")
+		} else {
+			sv, _ := cv["schema_version"].(string)
+			if sv != "caption_variants.v1" {
+				errs = append(errs, fmt.Sprintf("outputs/caption_variants.json: unexpected schema_version %q", sv))
+			}
+			if variantsRaw, ok := cv["variants"].([]any); ok {
+				for i, v := range variantsRaw {
+					vm, ok := v.(map[string]any)
+					if !ok {
+						errs = append(errs, fmt.Sprintf("outputs/caption_variants.json: variant %d is not an object", i+1))
+						continue
+					}
+					id, _ := vm["id"].(string)
+					text, _ := vm["text"].(string)
+					if id == "" {
+						warnings = append(warnings, fmt.Sprintf("outputs/caption_variants.json: variant %d has no id", i+1))
+					}
+					if strings.TrimSpace(text) == "" {
+						errs = append(errs, fmt.Sprintf("outputs/caption_variants.json: variant %d (id=%s) has empty text", i+1, id))
+					}
+				}
+			} else {
+				warnings = append(warnings, "outputs/caption_variants.json: variants field is missing or not an array")
 			}
 		}
 	}

@@ -14,6 +14,7 @@ import (
 
 type DoctorOptions struct {
 	Transcription bool
+	Media         bool
 }
 
 func Doctor(stdout io.Writer, opts DoctorOptions) error {
@@ -64,19 +65,55 @@ func Doctor(stdout io.Writer, opts DoctorOptions) error {
 		fmt.Fprintln(stdout, "MISSING configured python: set BYOM_VIDEO_PYTHON or configure python.interpreter in byom-video.yaml")
 	}
 
+	if opts.Media && ffmpegErr == nil {
+		printFFmpegFilterStatus(stdout, ffmpegPath)
+	}
+
 	fmt.Fprintln(stdout)
 	if opts.Transcription {
 		fmt.Fprintln(stdout, "Transcription check active: MISSING items above require attention.")
+	}
+	if opts.Media {
+		fmt.Fprintln(stdout, "Media filter check active: OPTIONAL items above require libass for caption burn.")
 	}
 	fmt.Fprintln(stdout, "Install hint:")
 	fmt.Fprintln(stdout, "  macOS:      brew install ffmpeg")
 	fmt.Fprintln(stdout, "  Ubuntu:     sudo apt-get install ffmpeg")
 	fmt.Fprintln(stdout, "  Windows:    winget install Gyan.FFmpeg")
+	fmt.Fprintln(stdout, "  captions:   ffmpeg must be compiled with --enable-libass for caption burn")
 	fmt.Fprintln(stdout, "  Python env: python3 -m venv ~/.byom-venv && ~/.byom-venv/bin/pip install -e workers[transcribe]")
 	fmt.Fprintln(stdout, "  Set python: export BYOM_VIDEO_PYTHON=~/.byom-venv/bin/python")
 	fmt.Fprintln(stdout, "  Note: transcription dependencies are optional for metadata-only runs.")
 
 	return nil
+}
+
+// printFFmpegFilterStatus checks FFmpeg filters used by creative-assemble and reports status.
+func printFFmpegFilterStatus(stdout io.Writer, ffmpegPath string) {
+	out, err := exec.Command(ffmpegPath, "-hide_banner", "-filters").CombinedOutput()
+	if err != nil {
+		fmt.Fprintln(stdout, "MISSING ffmpeg filters: could not query filter list")
+		return
+	}
+	checkFilter := func(name string) bool {
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && fields[1] == name {
+				return true
+			}
+		}
+		return false
+	}
+	if checkFilter("subtitles") {
+		fmt.Fprintln(stdout, "OK      ffmpeg filter: subtitles (caption burn available)")
+	} else {
+		fmt.Fprintln(stdout, "OPTIONAL ffmpeg filter: subtitles not available (libass not compiled in; caption burn will fail)")
+	}
+	if checkFilter("amix") {
+		fmt.Fprintln(stdout, "OK      ffmpeg filter: amix (voiceover mixing available)")
+	} else {
+		fmt.Fprintln(stdout, "OPTIONAL ffmpeg filter: amix not available (voiceover mixing may fail)")
+	}
 }
 
 // resolvePythonWithSource returns the effective python interpreter and its source label.
