@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/exporter"
-	"github.com/mirelahmd/byom-video/internal/runinfo"
+	"github.com/mirelahmd/OpenVFX/internal/exporter"
+	"github.com/mirelahmd/OpenVFX/internal/runinfo"
 )
 
 const makesRoot = ".byom-video/makes"

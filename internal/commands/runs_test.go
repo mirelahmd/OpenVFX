@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 func TestRunsPrintsRows(t *testing.T) {

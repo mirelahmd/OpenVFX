@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/highlights"
-	"github.com/mirelahmd/byom-video/internal/manifest"
-	"github.com/mirelahmd/byom-video/internal/modelrouter"
-	"github.com/mirelahmd/byom-video/internal/report"
+	"github.com/mirelahmd/OpenVFX/internal/highlights"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/modelrouter"
+	"github.com/mirelahmd/OpenVFX/internal/report"
 )
 
 const testConfigWithGoalRerankRoute = `models:

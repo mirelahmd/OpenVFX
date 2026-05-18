@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/agent"
+	"github.com/mirelahmd/OpenVFX/internal/agent"
 )
 
 type RevisePlanOptions struct {

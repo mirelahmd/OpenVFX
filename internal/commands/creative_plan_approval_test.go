@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirelahmd/byom-video/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/config"
 )
 
 // helper — creates a minimal creative plan on disk and returns the plan_id

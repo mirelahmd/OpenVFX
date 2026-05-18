@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mirelahmd/byom-video/internal/media"
+	"github.com/mirelahmd/OpenVFX/internal/media"
 )
 
 // ---- preset definitions ----

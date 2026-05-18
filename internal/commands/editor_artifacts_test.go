@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/editorartifacts"
-	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 func TestClipCardsFromRoughcutOnly(t *testing.T) {

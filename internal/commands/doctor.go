@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/mirelahmd/byom-video/internal/config"
-	"github.com/mirelahmd/byom-video/internal/media"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/media"
 )
 
 type DoctorOptions struct {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/config"
-	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/events"
 )
 
 // HTTPDoer is a minimal HTTP client interface, allowing httptest injection in tests.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/config"
+	"github.com/mirelahmd/OpenVFX/internal/config"
 )
 
 const creativePlansRoot = ".byom-video/creative_plans"

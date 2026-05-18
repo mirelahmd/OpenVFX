@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/agent"
-	"github.com/mirelahmd/byom-video/internal/batch"
+	"github.com/mirelahmd/OpenVFX/internal/agent"
+	"github.com/mirelahmd/OpenVFX/internal/batch"
 )
 
 type PlanOptions struct {

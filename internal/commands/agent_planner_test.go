@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/modelrouter"
+	"github.com/mirelahmd/OpenVFX/internal/modelrouter"
 )
 
 // ---- schema validation tests ----

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mirelahmd/byom-video/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
 )
 
 // ── Setup helpers ──────────────────────────────────────────────────────────────

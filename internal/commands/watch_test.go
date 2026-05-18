@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/watch"
+	"github.com/mirelahmd/OpenVFX/internal/watch"
 )
 
 func TestWatchRejectsExportForMetadataPreset(t *testing.T) {

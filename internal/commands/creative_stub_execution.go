@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/events"
 )
 
 // ---- output schema types ----

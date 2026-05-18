@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/agent"
+	"github.com/mirelahmd/OpenVFX/internal/agent"
 )
 
 func TestPlanDryRunWritesArtifact(t *testing.T) {

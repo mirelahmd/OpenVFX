@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/agent"
-	"github.com/mirelahmd/byom-video/internal/editorartifacts"
-	"github.com/mirelahmd/byom-video/internal/events"
-	"github.com/mirelahmd/byom-video/internal/exportartifacts"
-	"github.com/mirelahmd/byom-video/internal/goalartifacts"
-	"github.com/mirelahmd/byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/agent"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/goalartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type AgentResultOptions struct {

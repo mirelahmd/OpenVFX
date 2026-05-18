@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/chunks"
-	"github.com/mirelahmd/byom-video/internal/editorartifacts"
-	"github.com/mirelahmd/byom-video/internal/exportartifacts"
-	"github.com/mirelahmd/byom-video/internal/goalartifacts"
-	"github.com/mirelahmd/byom-video/internal/highlights"
-	"github.com/mirelahmd/byom-video/internal/manifest"
-	"github.com/mirelahmd/byom-video/internal/roughcut"
-	"github.com/mirelahmd/byom-video/internal/runstore"
-	"github.com/mirelahmd/byom-video/internal/transcript"
+	"github.com/mirelahmd/OpenVFX/internal/chunks"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/goalartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/highlights"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/roughcut"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/transcript"
 )
 
 type Result struct {

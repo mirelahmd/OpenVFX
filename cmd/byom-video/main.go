@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/mirelahmd/byom-video/internal/cli"
+	"github.com/mirelahmd/OpenVFX/internal/cli"
 )
 
 func main() {

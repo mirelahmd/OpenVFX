@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mirelahmd/byom-video/internal/editorartifacts"
-	"github.com/mirelahmd/byom-video/internal/events"
-	"github.com/mirelahmd/byom-video/internal/exportartifacts"
-	"github.com/mirelahmd/byom-video/internal/exporter"
-	"github.com/mirelahmd/byom-video/internal/exportscript"
-	"github.com/mirelahmd/byom-video/internal/goalartifacts"
-	"github.com/mirelahmd/byom-video/internal/manifest"
-	"github.com/mirelahmd/byom-video/internal/runstore"
+	"github.com/mirelahmd/OpenVFX/internal/editorartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/events"
+	"github.com/mirelahmd/OpenVFX/internal/exportartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/exporter"
+	"github.com/mirelahmd/OpenVFX/internal/exportscript"
+	"github.com/mirelahmd/OpenVFX/internal/goalartifacts"
+	"github.com/mirelahmd/OpenVFX/internal/manifest"
+	"github.com/mirelahmd/OpenVFX/internal/runstore"
 )
 
 type SelectedClipsOptions struct {
