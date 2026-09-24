@@ -44,6 +44,10 @@ Usage:
   byom-video review-creative-assemble <creative_plan_id> [--json] [--write-artifact]
   byom-video creative-result <creative_plan_id> [--json] [--write-artifact]
   byom-video validate-creative-plan <creative_plan_id> [--json]
+  byom-video produce <input-file-or-dir> --goal|--brief <text> [--target-duration <seconds>] [--director <deterministic|llm>] [--director-model <name>] [--director-backend <url>] [--director-route <key>] [--no-director] [--python <path>] [--dry-run] [--json]
+  byom-video productions [--json] [--limit <n>]
+  byom-video creative-treatment <production_id> [--json]
+  byom-video replay <production_id> [--json]
   byom-video run <input-file> [--with-transcript-stub | --with-transcript] [--with-captions] [--with-chunks] [--with-highlights] [--with-roughcut] [--with-ffmpeg-script] [--ffmpeg-mode <stream-copy|reencode>] [--with-report]
   byom-video pipeline <input-file> --preset <shorts|metadata>
   byom-video batch <input-dir> [--preset <shorts|metadata>] [--recursive] [--limit <n>] [--fail-fast] [--dry-run] [--validate] [--export | --export-and-validate]
@@ -190,7 +194,7 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 1
 		}
 		return 0
-	case "version":
+	case "version", "--version", "-V":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, "error: version does not accept arguments")
 			fmt.Fprint(stderr, usage)
@@ -691,6 +695,54 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 		if err := commands.ReviewCaptionVariants(planID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "produce":
+		inputPath, opts, err := parseProduceArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Produce(inputPath, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "productions":
+		opts, err := parseProductionsArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Productions(stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "creative-treatment":
+		productionID, opts, err := parseCreativeTreatmentArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.CreativeTreatmentCommand(productionID, stdout, opts); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	case "replay":
+		productionID, opts, err := parseReplayArgs(args[1:])
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := commands.Replay(productionID, stdout, opts); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
 		}
@@ -3802,6 +3854,169 @@ func parsePipelineArgs(args []string) (string, commands.RunOptions, error) {
 		return "", commands.RunOptions{}, err
 	}
 	return parseRunArgsWithBase(forwarded, base)
+}
+
+func parseProduceArgs(args []string) (string, commands.ProduceOptions, error) {
+	opts := commands.ProduceOptions{}
+	inputPath := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--brief", "--goal":
+			if index+1 >= len(args) {
+				return "", opts, fmt.Errorf("%s requires a value", arg)
+			}
+			index++
+			opts.Brief = args[index]
+		case "--no-director":
+			opts.NoDirector = true
+		case "--director":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--director requires a value")
+			}
+			index++
+			switch args[index] {
+			case "deterministic", "llm":
+				opts.DirectorMode = args[index]
+			default:
+				return "", opts, fmt.Errorf("--director must be deterministic or llm, got %q", args[index])
+			}
+		case "--director-model":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--director-model requires a value")
+			}
+			index++
+			opts.DirectorModel = args[index]
+		case "--director-backend":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--director-backend requires a value")
+			}
+			index++
+			opts.DirectorBackend = args[index]
+		case "--director-route":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--director-route requires a value")
+			}
+			index++
+			opts.DirectorRoute = args[index]
+		case "--director-timeout":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--director-timeout requires a value")
+			}
+			index++
+			value, err := strconv.Atoi(args[index])
+			if err != nil || value <= 0 {
+				return "", opts, fmt.Errorf("--director-timeout requires a positive integer, got %q", args[index])
+			}
+			opts.DirectorTimeout = value
+		case "--target-duration":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--target-duration requires a value")
+			}
+			index++
+			value, err := parseFloatFlag("--target-duration", args[index])
+			if err != nil {
+				return "", opts, err
+			}
+			opts.TargetDuration = value
+		case "--python":
+			if index+1 >= len(args) {
+				return "", opts, errors.New("--python requires a value")
+			}
+			index++
+			opts.PythonInterpreter = args[index]
+		case "--dry-run":
+			opts.DryRun = true
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q", arg)
+			}
+			if inputPath != "" {
+				return "", opts, errors.New("produce accepts a single input path")
+			}
+			inputPath = arg
+		}
+	}
+	if inputPath == "" {
+		return "", opts, errors.New("produce requires an input file or directory")
+	}
+	if strings.TrimSpace(opts.Brief) == "" {
+		return "", opts, errors.New("--goal (or --brief) is required")
+	}
+	return inputPath, opts, nil
+}
+
+func parseCreativeTreatmentArgs(args []string) (string, commands.CreativeTreatmentOptions, error) {
+	opts := commands.CreativeTreatmentOptions{}
+	productionID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q", arg)
+			}
+			if productionID != "" {
+				return "", opts, errors.New("creative-treatment accepts a single production_id")
+			}
+			productionID = arg
+		}
+	}
+	if productionID == "" {
+		return "", opts, errors.New("creative-treatment requires a production_id")
+	}
+	return productionID, opts, nil
+}
+
+func parseProductionsArgs(args []string) (commands.ProductionsOptions, error) {
+	opts := commands.ProductionsOptions{}
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--json":
+			opts.JSON = true
+		case "--limit":
+			if index+1 >= len(args) {
+				return opts, errors.New("--limit requires a value")
+			}
+			index++
+			value, err := strconv.Atoi(args[index])
+			if err != nil || value <= 0 {
+				return opts, fmt.Errorf("--limit requires a positive integer, got %q", args[index])
+			}
+			opts.Limit = value
+		default:
+			return opts, fmt.Errorf("unknown flag %q", args[index])
+		}
+	}
+	return opts, nil
+}
+
+func parseReplayArgs(args []string) (string, commands.ReplayOptions, error) {
+	opts := commands.ReplayOptions{}
+	productionID := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch arg {
+		case "--json":
+			opts.JSON = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", opts, fmt.Errorf("unknown flag %q", arg)
+			}
+			if productionID != "" {
+				return "", opts, errors.New("replay accepts a single production_id")
+			}
+			productionID = arg
+		}
+	}
+	if productionID == "" {
+		return "", opts, errors.New("replay requires a production_id")
+	}
+	return productionID, opts, nil
 }
 
 func parseMakeArgs(args []string) (string, commands.MakeOptions, error) {

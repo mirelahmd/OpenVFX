@@ -244,10 +244,14 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		}
 	}
 	if opts.WithCaptions {
+		transcriptForCaptions := filepath.Join(ctx.Dir, "transcript.json")
+		if _, statErr := os.Stat(transcriptForCaptions); statErr != nil {
+			_ = eventLog.Write("CAPTIONS_SKIPPED", map[string]any{"reason": "no transcript"})
+		} else {
 		if err := eventLog.Write("CAPTIONS_STARTED", map[string]any{"transcript_path": "transcript.json"}); err != nil {
 			return err
 		}
-		generatedSummary, err := captions.WriteFromTranscript(filepath.Join(ctx.Dir, "transcript.json"), filepath.Join(ctx.Dir, "captions.srt"))
+		generatedSummary, err := captions.WriteFromTranscript(transcriptForCaptions, filepath.Join(ctx.Dir, "captions.srt"))
 		if err != nil {
 			m.Status = manifest.StatusFailed
 			m.ErrorMessage = err.Error()
@@ -265,10 +269,14 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		if err := eventLog.Write("ARTIFACT_WRITTEN", map[string]any{"path": "captions.srt"}); err != nil {
 			return err
 		}
+		} // end transcript exists check
 	}
 	var chunksSummary *chunks.Summary
 	if opts.WithChunks {
 		transcriptPath := filepath.Join(ctx.Dir, "transcript.json")
+		if _, statErr := os.Stat(transcriptPath); statErr != nil {
+			_ = eventLog.Write("CHUNKS_SKIPPED", map[string]any{"reason": "no transcript"})
+		} else {
 		if !transcriptValidated {
 			if err := eventLog.Write("TRANSCRIPT_VALIDATION_STARTED", map[string]any{"path": "transcript.json"}); err != nil {
 				return err
@@ -327,13 +335,18 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		if err := eventLog.Write("ARTIFACT_WRITTEN", map[string]any{"path": "chunks.json"}); err != nil {
 			return err
 		}
+		} // end transcript exists check
 	}
 	if opts.WithHighlights {
+		chunksPath := filepath.Join(ctx.Dir, "chunks.json")
+		if _, statErr := os.Stat(chunksPath); statErr != nil {
+			_ = eventLog.Write("HIGHLIGHTS_SKIPPED", map[string]any{"reason": "no chunks"})
+		} else {
 		if err := eventLog.Write("HIGHLIGHTS_STARTED", map[string]any{"chunks_path": "chunks.json"}); err != nil {
 			return err
 		}
 		highlightsPath := filepath.Join(ctx.Dir, "highlights.json")
-		generatedSummary, err := highlights.WriteFromChunks(filepath.Join(ctx.Dir, "chunks.json"), highlightsPath, highlights.Options{
+		generatedSummary, err := highlights.WriteFromChunks(chunksPath, highlightsPath, highlights.Options{
 			MinDurationSeconds: opts.HighlightMinDuration,
 			MaxDurationSeconds: opts.HighlightMaxDuration,
 			TopK:               opts.HighlightTopK,
@@ -374,13 +387,18 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		if err := eventLog.Write("ARTIFACT_WRITTEN", map[string]any{"path": "highlights.json"}); err != nil {
 			return err
 		}
+		} // end chunks exists check
 	}
 	if opts.WithRoughcut {
+		highlightsPath := filepath.Join(ctx.Dir, "highlights.json")
+		if _, statErr := os.Stat(highlightsPath); statErr != nil {
+			_ = eventLog.Write("ROUGHCUT_SKIPPED", map[string]any{"reason": "no highlights"})
+		} else {
 		if err := eventLog.Write("ROUGHCUT_STARTED", map[string]any{"highlights_path": "highlights.json"}); err != nil {
 			return err
 		}
 		roughcutPath := filepath.Join(ctx.Dir, "roughcut.json")
-		generatedSummary, err := roughcut.WriteFromHighlights(filepath.Join(ctx.Dir, "highlights.json"), roughcutPath, roughcut.Options{MaxClips: opts.RoughcutMaxClips})
+		generatedSummary, err := roughcut.WriteFromHighlights(highlightsPath, roughcutPath, roughcut.Options{MaxClips: opts.RoughcutMaxClips})
 		if err != nil {
 			m.Status = manifest.StatusFailed
 			m.ErrorMessage = err.Error()
@@ -415,12 +433,17 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		if err := eventLog.Write("ARTIFACT_WRITTEN", map[string]any{"path": "roughcut.json"}); err != nil {
 			return err
 		}
+		} // end highlights exists check
 	}
 	if opts.WithFFmpegScript {
+		roughcutForFFmpeg := filepath.Join(ctx.Dir, "roughcut.json")
+		if _, statErr := os.Stat(roughcutForFFmpeg); statErr != nil {
+			_ = eventLog.Write("FFMPEG_SCRIPT_SKIPPED", map[string]any{"reason": "no roughcut"})
+		} else {
 		if err := eventLog.Write("FFMPEG_SCRIPT_STARTED", map[string]any{"roughcut_path": "roughcut.json"}); err != nil {
 			return err
 		}
-		generatedSummary, err := exportscript.WriteFFmpegScript(filepath.Join(ctx.Dir, "roughcut.json"), filepath.Join(ctx.Dir, "ffmpeg_commands.sh"), inputPath, opts.FFmpegOutputFormat, opts.FFmpegMode)
+		generatedSummary, err := exportscript.WriteFFmpegScript(roughcutForFFmpeg, filepath.Join(ctx.Dir, "ffmpeg_commands.sh"), inputPath, opts.FFmpegOutputFormat, opts.FFmpegMode)
 		if err != nil {
 			m.Status = manifest.StatusFailed
 			m.ErrorMessage = err.Error()
@@ -438,6 +461,7 @@ func Run(inputFile string, stdout io.Writer, opts RunOptions) error {
 		if err := eventLog.Write("ARTIFACT_WRITTEN", map[string]any{"path": "ffmpeg_commands.sh"}); err != nil {
 			return err
 		}
+		} // end roughcut exists check
 	}
 
 	if opts.WithReport {

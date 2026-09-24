@@ -132,11 +132,18 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("VersionCommand returned error: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "BYOM Video") {
-		t.Error("expected BYOM Video in version output")
+	// The public product name on the release surface is OpenVFX.
+	if !strings.Contains(out, "OpenVFX") {
+		t.Error("expected OpenVFX in version output")
 	}
 	if !strings.Contains(out, Version) {
 		t.Error("expected version string in version output")
+	}
+	// An installed user needs to see what their install actually resolved to.
+	for _, want := range []string{"agent sidecar:", "python:", "data dir:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in version output for install diagnosis", want)
+		}
 	}
 }
 

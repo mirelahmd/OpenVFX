@@ -9975,3 +9975,404 @@ Errors or assumptions:
 - Initial sandboxed `go test ./... -count=1` failed because existing `httptest` voice generation tests could not bind localhost; rerun with approved escalation passed.
 - `go build` and `smoke-create-command` emitted the existing non-fatal Go stat-cache permission warning under `/Users/mireliftikharahmed/go/pkg/mod/cache`; both commands exited successfully.
 <!-- HANDOFF 070 END -->
+
+<!-- PROMPT 071 START -->
+## Prompt 071 — Prompt-Based Timeline Fallback for Silent/Generated Videos
+
+**Goal:** Fix the "creative-timeline produced 0 clips" failure that occurs when processing AI-generated or silent videos that have no speech-driven roughcut artifacts. Implement a deterministic time instruction parser, a `timeline_source.json` fallback artifact, and a synthetic clip generator so the full `make` pipeline can complete for any video.
+
+**Scope:**
+- New: `internal/commands/timeline_parser.go` — `ParseTimeInstruction` + helpers
+- New: `internal/commands/timeline_source.go` — `BuildSyntheticTimelineSource`, `WriteTimelineSourceToRun`, `probeMediaDuration`, `SyntheticTimelineFallbackMessage`
+- Modified: `internal/commands/creative_timeline.go` — three-level fallback chain, `SourcePath`/`DurationSecs` on items, `SyntheticFallback`/`FallbackReason` on source struct
+- Modified: `internal/commands/make.go` — surface warnings, updated 0-clips error, `timeline_source.json` accepted in `validateSkipPipelineRun`
+- New: `internal/commands/timeline_parser_test.go` (19 test cases)
+- New: `internal/commands/timeline_source_test.go` (9 test cases)
+- New: `scripts/smoke-synthetic-timeline.sh`
+- New: `docs/timeline-source.md`
+
+**Also fixed in this session (pipeline bug fixes from Prompt 070 testing):**
+- `run.go`: skip captions/chunks/highlights/roughcut/ffmpeg when upstream artifacts are missing (graceful silent video handling)
+- `make.go`: hardcoded `WithTranscript: true` replaced with `cfg.Transcription.Enabled` (and all other stages)
+- `transcribe.py`: wrapped `model.transcribe()` in try/except to handle silent/no-audio video; `info = None` handled
+<!-- PROMPT 071 END -->
+
+<!-- HANDOFF 071 START -->
+## Handoff 071
+
+What was built:
+
+**timeline_parser.go** — `ParseTimeInstruction(goal string, duration float64) ParsedTimeInstruction` with support for: whole/entire/full video, first N seconds (clamped), last N seconds (clamped), from X to Y seconds, seconds X-Y, loop last N seconds [M times], and repeat count modifiers (twice / three times / N times / loop). All values clamped to `[0, duration]`. Invalid ranges fall back to whole video with a warning.
+
+**timeline_source.go** — `BuildSyntheticTimelineSource` calls `ParseTimeInstruction` and generates N clips (one per repeat) with matching IDs, `source_path`, `source_start`/`source_end`, and `start`/`end` aliases. `probeMediaDuration` wraps `media.Probe`. `SyntheticTimelineFallbackMessage` formats the user-facing warning.
+
+**creative_timeline.go** — three-level fallback after the normal candidate loop:
+1. Read existing `timeline_source.json` from run dir
+2. Call `BuildSyntheticTimelineSource` from ffprobe duration + goal; write `timeline_source.json`; set `syntheticFallback = true`
+3. If still 0 clips, emit warning and continue (empty timeline)
+Video items now carry `SourcePath` and `DurationSecs`. `CreativeTimelineSource` now has `SyntheticFallback bool` and `FallbackReason string`.
+
+**make.go** — after `CreativeTimeline()`, reads the timeline artifact, prints any warnings to stdout, adds them to `make_summary.json`. Updated "0 clips" error message to mention ffprobe. `validateSkipPipelineRun` accepts `timeline_source.json` as a valid clip source (so `--skip-pipeline` works for generated video runs).
+
+**Tests:** 28 new tests, all passing. Full `go test ./...` green, `go build` passes.
+
+**Smoke script:** `scripts/smoke-synthetic-timeline.sh` runs pipeline → creative-plan → creative-timeline and validates `timeline_source.json` and `creative_timeline.json` are written with ≥1 clip.
+
+**Docs:** `docs/timeline-source.md` covers the fallback chain, schema, goal text patterns, warnings, and end-to-end example.
+
+Commands run:
+```sh
+go build ./cmd/byom-video
+go test ./internal/commands/ -run "TestParseTimeInstruction|TestParseSecondValue|TestClamp|TestBuildSyntheticTimeline|TestWriteTimelineSource|TestSyntheticTimelineFallbackMessage|TestReadClipsFromArtifact_TimelineSource" -v
+go test ./...
+chmod +x scripts/smoke-synthetic-timeline.sh
+```
+
+Test results:
+- 28 new timeline parser/source tests: all passed.
+- `go test ./...`: all packages passed (no regressions).
+- `go build ./cmd/byom-video`: passed.
+
+Known limitations:
+- Synthetic fallback requires ffprobe on PATH. If ffprobe is unavailable, creative-timeline will still produce 0 clips and `make` will fail.
+- The fallback only activates when `creative-timeline` is called with `--run-id` (i.e. from `make --yes` or the manual command). Standalone `creative-timeline` without `--run-id` has no clip source regardless.
+- `mm:ss` time format in `parseSecondValue` requires the full `1:30` format — bare timestamps are not supported.
+- Repeat count max is hardcoded at 10 (`maxTimelineRepeats`).
+
+Next recommended milestone:
+- Add `--no-transcript` flag to `pipeline` command so silent video runs don't even attempt transcription.
+- Add install script for all Python deps (langgraph, whisper, etc.) — explicitly requested by user.
+- Add end-to-end test that calls `make` on a real generated video and validates the draft is produced.
+- Consider adding a `timeline-source` sub-command to write `timeline_source.json` manually without running the full make pipeline.
+
+Errors or assumptions:
+- Assumed `readClipsFromArtifact` correctly falls back to `source_start`/`source_end` when `start`/`end` are zero — this was already implemented in the prior session and verified by the new tests.
+- Assumed ffprobe is available in the test environment — `probeMediaDuration` tests are skipped by using `BuildSyntheticTimelineSource` directly with a pre-known duration rather than probing a real file.
+- The `validateSkipPipelineRun` guard now accepts `timeline_source.json`; a run with only that artifact is valid for `--skip-pipeline`.
+<!-- HANDOFF 071 END -->
+
+<!-- PROMPT 072 START -->
+## Prompt 072 — Production Control Loop v1 (`produce`)
+
+**Goal:** Make one small piece of the long-term OpenVFX architecture undeniably real:
+a vertical slice where the plan IS the program — observe → plan → execute → validate
+→ revise → complete, with full argv provenance and replay.
+
+**Scope:**
+- New package: `internal/production/` — `plan.go`, `capability.go`, `observe.go`,
+  `planner.go`, `execute.go`, `stages.go`, `validate.go`, `revise.go`, `record.go`
+- New: `internal/commands/produce.go` — `produce`, `productions`, `replay`
+- New: `internal/production/production_test.go` (30 tests)
+- New: `scripts/smoke-produce.sh`, `scripts/make-produce-fixtures.sh`
+- New: `docs/production.md`, `CLAUDE.md`
+- Modified: `internal/cli/root.go` (dispatch + 3 arg parsers + usage), `README.md`,
+  `Makefile` (stale MODULE `byom-video` → `OpenVFX`; new `smoke-produce` target)
+- Untouched: `make`, `create`, `agent-plan`, `job-*`, `daemon`, `mask*`, `creative_*`
+<!-- PROMPT 072 END -->
+
+<!-- HANDOFF 072 START -->
+## Handoff 072
+
+What was built:
+
+**`internal/production/plan.go`** — `ProductionPlan` (`openvfx_production_plan.v1`) with
+typed `Stage`s. Each stage declares `Requires` (a capability id), `Requirements`
+(cpu_cores, memory_mb, gpu, runtime, container_image_hint, network_egress), typed
+`Params`, and a late-filled `Binding`. `Layout` centralises every path under one
+production root, fixing the scattered-artifact problem for this path. `Validate()`
+enforces unique ids, non-empty capability/runtime, and backward-only dependencies.
+
+**`capability.go`** — probes what the machine can actually do: ffmpeg/ffprobe binaries
+and versions, the ffmpeg filter list (scale/pad/amix/subtitles/drawtext), python
+module importability, and configured tool backends. Status is never read from config.
+`Prober` interface makes it unit-testable.
+
+**`observe.go`** — walks a file or directory, ffprobes each media file, records
+non-media and failed probes as `skipped` with reasons rather than dropping them.
+
+**`planner.go`** — pure function (no I/O, no capability lookups) mapping brief +
+observation to a 4–6 stage DAG. `ParseIntent` extracts target duration, aspect ratio,
+caption/burn-in and audio expectations into persisted structured `Intent`, which is
+what the validator later asserts against.
+
+**`execute.go` / `stages.go`** — walks the plan, binds each stage, dispatches to real
+executors, writes `stages/<id>/execution.json` with **argv, exit code, duration_ms,
+tool version, stderr tail**. Completed stages carry over across plan versions so a
+revision only re-runs what changed.
+
+**`validate.go`** — 7 assertions derived from Intent, checked by ffprobing the real
+output. Records expected AND actual for every one. Degraded delivery (sidecar captions
+against a burn-in brief) passes but is flagged, yielding `passed_degraded`.
+
+**`revise.go`** — bounded at `MaxRevisions = 2`. `ReviseForCapability` rewrites the
+blocked stage's `Requires` to an available substitute (never deletes the stage — the
+intent survives the substitution) and downgrades its declared footprint.
+`ReviseForValidation` corrects duration shortfall. Both write `revisions/rev_NNNN.json`
+with trigger/from/to/change/reason. `Clone()` guarantees plan v1 is never mutated.
+
+**`record.go`** — `run_record.json` spanning one id, plus `handoff.md`.
+
+Two design decisions worth preserving:
+1. **The executor never substitutes silently.** It binds to the declared capability or
+   blocks. Substitution is a planning decision and must carry a reason.
+2. **The planner never auto-extends to a duration target on pass 1.** Looping footage
+   is a creative choice; it requires a recorded revision.
+
+Bugs found and fixed during real smoke testing:
+- concat silently dropped the audio stream whenever clip layouts disagreed. The
+  assemble stage now normalises every clip to one AAC track, synthesising silence for
+  sources with no audio, and maps streams explicitly.
+- an empty transcript (source with no speech) crashed the overlay stage; it now
+  completes with an honest note and the validator fails `captions_delivered`.
+
+Commands run:
+```sh
+go build ./...
+go test ./internal/production/
+scripts/smoke-produce.sh
+go test ./...
+```
+
+Test results:
+- 30 new tests in `internal/production`: all pass.
+- `go test ./...`: 29 packages, all pass, no regressions.
+- `scripts/smoke-produce.sh`: PASS (asserts plan v2, rev_0001, argv provenance,
+  validation assertions, sidecar output, replay with 0 failures).
+- Regression: `make ... --yes --burn-captions` still behaves exactly as before.
+- Replay produced byte-identical output (md5 match on formatted.mp4).
+
+What is real vs unavailable:
+- REAL: ffprobe observation, faster-whisper transcription, deterministic clip
+  selection, ffmpeg cut/concat/scale/pad, sidecar SRT delivery, all argv provenance,
+  all validation, both revision triggers, replay.
+- UNAVAILABLE on this machine and honestly reported: `ffmpeg.filter.subtitles`,
+  `ffmpeg.filter.drawtext` (Homebrew ffmpeg 8.1 has no libass/freetype),
+  `text.ollama` (tools disabled / server down).
+- NOT WIRED into `produce`: generative video/image, voice generation, LLM planning.
+  They exist elsewhere in the tree but are not production stages.
+
+Known limitations (also in docs/production.md):
+- Transcription runs on the first audio-carrying asset only.
+- `select_clips` uses directory order, not content-aware selection.
+- `drawtext` fallback renders only the first cue, statically.
+- Intent parsing is regex/keyword, not a language model.
+- Float seconds, no frames/timecode. No OpenTimelineIO.
+
+Next recommended milestone:
+- OpenTimelineIO import/export (`EditDecisionList` maps onto it almost directly).
+  This is the highest-leverage credibility move for ASWF/HPA audiences.
+- Frames + timecode as first-class types in the plan schema.
+- `--local-only` hard mode that refuses to bind any egress capability.
+- Resolve the four-way name collision (OpenVFX / byom-video / BYOM Video / BYOMVIDEO).
+<!-- HANDOFF 072 END -->
+
+<!-- HANDOFF 073 START -->
+## Handoff 073
+
+### What changed
+
+`produce` now runs a **Creative Director** before deterministic planning. A rich
+creative request becomes `creative_treatment.json` — objective, tone, opening
+strategy, narrative beats, pacing phases, per-asset roles with explicit
+confidence, intended cuts, coverage gaps, degraded alternatives, success
+criteria, uncertainties and citable decisions — and that treatment drives the
+real edit.
+
+New commands/flags: `creative-treatment <production_id>`, and on `produce`:
+`--goal` (alias of `--brief`), `--director deterministic|llm`,
+`--director-model/-backend/-route/-timeout`, `--no-director`.
+
+### Architecture decision
+
+**The director decides WHAT; the Go runtime keeps all execution authority.**
+LangGraph produces a treatment and nothing else. Capability binding, policy,
+execution, failure handling, revision mechanics, validation and replay are
+untouched.
+
+Three consequences worth preserving:
+
+1. **Treatment output is untrusted input.** `CreativeTreatment.Validate` rejects
+   hallucinated asset ids, inverted ranges, out-points past a clip's end and
+   dangling decision refs. A treatment that fails is discarded whole — never
+   partly applied — and production falls back to intent-only planning.
+2. **`semantic_reasoning` is true only when a model actually completed a call.**
+   Rules-based output that claims it is rejected by the validator. Three modes
+   are reported: `llm`, `deterministic` (graph ran, no model), and unavailable
+   (sidecar could not run at all).
+3. **One bounded critique pass, bounded structurally.** The graph is linear with
+   a single critique node and no edge back into itself; no configuration can
+   make it loop.
+
+Config resolution stays in Go: it resolves `models.routes.creative_director` and
+hands Python a JSON config, so the sidecar never parses YAML or picks a provider.
+No vendor SDK — `llm.py` is stdlib `urllib` with Ollama and OpenAI-compatible
+routes behind one interface.
+
+### Files changed
+
+New Python: `workers/openvfx_agent_graph/creative/{schemas,llm,prompts,deterministic,nodes,graph}.py`,
+`tests/test_creative_director.py`. Modified: `cli.py` (one subcommand).
+
+New Go: `internal/production/{treatment,assets,director,plan_treatment}.go`,
+`treatment_test.go`. Modified: `plan.go` (`treatment_decision_id`, `SegmentCut`),
+`stages.go` (selector honours treatment segments), `record.go` (treatment
+summary + handoff section), `commands/produce.go`, `cli/root.go`.
+
+Docs: `docs/artifacts/creative-treatment.md`, `docs/production.md`, README,
+`examples/configs/creative-director-ollama.yaml`. Smoke:
+`scripts/smoke-creative-director.sh` (+ Makefile target).
+
+### Tests run
+
+- `pytest openvfx_agent_graph/tests/` — **61 passed** (31 new).
+- `go test ./internal/production/` during development; `go test ./...` once at
+  the end — **24 packages, all pass**, no regressions.
+- `go build ./cmd/byom-video` — passes.
+- `scripts/smoke-creative-director.sh` — PASS.
+
+### Demonstrated behavior
+
+Deterministic mode (default, no network): treatment written with roles,
+narrative, pacing, gap detection and one critique pass; plan
+`planner=creative_director.deterministic`; `network_egress_calls: 0`.
+
+LLM mode, verified over HTTP against a **stub** Ollama-shaped endpoint (not a
+real model): the director assigned `hook`/`b_roll`/`primary_narration`, designed
+a fast→slow two-phase structure, flagged a missing atmospheric insert with a
+degraded alternative, and the critique tightened the build by 1s and extended the
+final hold by 1s. Those revised cuts reached the real EDL and then:
+
+```
+dec_0001 "Start 1s into clip_1 rather than at frame zero"
+  → seg_0001 source_in 1.0
+  → ffmpeg -hide_banner -y -ss 1.000 -i .../clip_1.mp4 -t 4.000 ...
+```
+
+The capability-revision path still fires underneath (subtitles → sidecar SRT).
+
+### Known limitations
+
+- **The LLM route has never run against a real model.** Ollama is not installed
+  here; verification used scripted stubs and a stub HTTP endpoint. Treat
+  prompt quality as unproven.
+- Deterministic mode is keyword/regex interpretation. It says so in
+  `uncertainties` and never claims semantic reasoning, but it is not understanding.
+- Asset roles use only duration, audio and transcript presence — no content
+  analysis — so roles are often `unknown`/`uncertain`.
+- Gaps are detected and reported but never fulfilled: `produce` has no
+  generation stage, so a gap stays a gap.
+- Transcription still runs on one asset; float seconds, no timecode; no OTIO.
+- `langgraph` is now a hard requirement for the director (installed in both
+  `.venv` and `~/.byom-venv`); without it `produce` degrades to intent-only.
+
+### Next milestone
+
+1. Run the director against a real local Ollama and iterate on prompt quality —
+   this is the only way to know whether the reasoning is actually good.
+2. Add `langgraph` to `install.sh` (still the long-standing pending TODO).
+3. OpenTimelineIO import/export — `EditDecisionList` maps onto it almost directly.
+4. Wire `generated_asset_needs` to the existing `visual-requests` path so a
+   detected gap can be fulfilled under scoped approval.
+<!-- HANDOFF 073 END -->
+
+<!-- HANDOFF 074 START -->
+## Handoff 074
+
+### What changed
+
+OpenVFX is now installable by an external user with one command — no Go, no
+clone, no manual langgraph step, no developer `.venv`. Release archives carry
+the Go CLI **and** the Python agent sidecar, so an installed Creative Director
+works without a source checkout.
+
+Go changes were confined to runtime path resolution and the version surface:
+a new `internal/production/runtime.go` resolves the sidecar and interpreter
+**installed-location-first**, with the source checkout as a development
+fallback. `agent_graph_run.go`'s duplicate resolver now delegates to it.
+A configured `python.interpreter` is honoured only if it actually exists, so a
+stale `byom-video.yaml` cannot break an installed CLI.
+
+### Install command
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mirelahmd/OpenVFX/main/install.sh | sh
+```
+
+Pinning a version requires the variable **after** the pipe
+(`... | OPENVFX_VERSION=v0.2.0 sh`); before `curl` it is scoped to curl and has
+no effect. Documented that way in README and the script header.
+
+### Release artifacts
+
+`scripts/build-release.sh [version]` → `dist/`:
+
+```
+openvfx_<version>_darwin_arm64.tar.gz
+openvfx_<version>_darwin_amd64.tar.gz
+openvfx_<version>_linux_amd64.tar.gz
+openvfx_<version>_linux_arm64.tar.gz
+SHA256SUMS
+```
+
+~3.6 MB each. The script refuses to build if
+`workers/openvfx_agent_graph/creative` is missing, so a release cannot silently
+ship a CLI with no agent. `.github/workflows/release.yml` builds, verifies
+archive contents and publishes on a `v*` tag. **No release has been published.**
+
+### Installed filesystem layout
+
+```
+~/.local/bin/openvfx                         (or /usr/local/bin when writable)
+~/.local/bin/byom-video -> openvfx           compatibility symlink
+~/.local/share/openvfx/<version>/workers/    Python agent sidecar
+~/.local/share/openvfx/current -> <version>  what the CLI resolves
+~/.local/share/openvfx/venv/                 isolated agent environment
+```
+
+### Clean-install result
+
+`scripts/smoke-install.sh` installs into a throwaway `HOME` with every
+development env var unset, pipes the installer through stdin, then runs from an
+unrelated directory. Against the real `v0.2.0` archive:
+
+- `--version` / `version` / `--help` — ok
+- sidecar resolved to the installed data dir, and asserted **not** to be the
+  source checkout
+- `langgraph` imports from the installed venv; the creative graph builds
+- `doctor` capability discovery — ok
+- installed `produce` rendered a real 1080x1920 mp4, all 6 assertions PASS,
+  Creative Director reached `deterministic` mode, 0 network calls
+
+Checksum tampering was verified to fail closed: nothing is installed.
+
+### Tests run
+
+`go test ./...` once (24 packages, pass) · targeted
+`./internal/{production,commands,cli}` during work · `sh -n` on both new scripts
+· cross-build of all four platforms once · `smoke-install.sh` once. Python tests
+not re-run: no sidecar code changed.
+
+### Known limitations
+
+- **faster-whisper is not installed by default** — it is a large download, and
+  the milestone's named gap was langgraph. Captions therefore degrade out of the
+  box; the installer prints the exact opt-in command and
+  `OPENVFX_WITH_TRANSCRIBE=1` enables it. Deliberate call, worth revisiting.
+- The raw install URL 404s until `install.sh` lands on `main`.
+- No release is published, so the default "latest" path is untested against a
+  real GitHub release; the archive path is fully exercised via `OPENVFX_ARCHIVE`.
+- Archives are unsigned beyond SHA-256 (no cosign/notarization); macOS Gatekeeper
+  may quarantine a downloaded binary on some systems.
+- Linux/amd64 and both cross-built arm64 archives were built but not executed —
+  only darwin/arm64 was run.
+- Binary is still `cmd/byom-video` internally; only the public name is `openvfx`.
+
+### Files changed
+
+New: `scripts/build-release.sh`, `scripts/smoke-install.sh`,
+`.github/workflows/release.yml`, `internal/production/runtime.go`.
+Replaced: `install.sh`. Modified: `internal/commands/version.go`,
+`internal/commands/doctor_test.go`, `internal/commands/agent_graph_run.go`,
+`internal/production/{capability,director}.go`, `internal/cli/root.go`
+(`--version`), `README.md`, `Makefile`, `.gitignore`.
+<!-- HANDOFF 074 END -->

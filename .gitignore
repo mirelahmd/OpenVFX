@@ -10,3 +10,6 @@ examples/fixtures/*.mp4
 workers/*.egg-info/
 workers/**/__pycache__/
 workers/build/
+working_instructions.md
+/dist/
+.pytest_cache/

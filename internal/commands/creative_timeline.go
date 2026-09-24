@@ -30,9 +30,11 @@ type CreativeTimelineArtifact struct {
 }
 
 type CreativeTimelineSource struct {
-	ClipArtifact string `json:"clip_artifact,omitempty"`
-	ClipCount    int    `json:"clip_count"`
-	StubOutputs  bool   `json:"stub_outputs"`
+	ClipArtifact      string `json:"clip_artifact,omitempty"`
+	ClipCount         int    `json:"clip_count"`
+	StubOutputs       bool   `json:"stub_outputs"`
+	SyntheticFallback bool   `json:"synthetic_fallback,omitempty"`
+	FallbackReason    string `json:"fallback_reason,omitempty"`
 }
 
 type CreativeTimelineTrack struct {
@@ -48,6 +50,8 @@ type CreativeTimelineItem struct {
 	TimelineEnd   float64 `json:"timeline_end"`
 	SourceStart   float64 `json:"source_start"`
 	SourceEnd     float64 `json:"source_end,omitempty"`
+	SourcePath    string  `json:"source_path,omitempty"`
+	DurationSecs  float64 `json:"duration_seconds,omitempty"`
 	Text          string  `json:"text,omitempty"`
 	Label         string  `json:"label,omitempty"`
 	Notes         string  `json:"notes,omitempty"`
@@ -113,10 +117,11 @@ type ReviewCreativeTimelineOptions struct {
 // ---- internal clip helper ----
 
 type timelineClip struct {
-	ID    string
-	Start float64
-	End   float64
-	Text  string
+	ID         string
+	Start      float64
+	End        float64
+	Text       string
+	SourcePath string
 }
 
 // readClipsFromArtifact reads clips from a run artifact JSON file.
@@ -143,6 +148,17 @@ func readClipsFromArtifact(path string) ([]timelineClip, error) {
 			}
 			start, _ := jsonFloat(m, "start")
 			end, _ := jsonFloat(m, "end")
+			// fall back to source_start/source_end (timeline_source.json format)
+			if start == 0 {
+				if ss, ok := jsonFloat(m, "source_start"); ok {
+					start = ss
+				}
+			}
+			if end == 0 {
+				if se, ok := jsonFloat(m, "source_end"); ok {
+					end = se
+				}
+			}
 			dur, _ := jsonFloat(m, "duration_seconds")
 			if end == 0 && dur > 0 {
 				end = start + dur
@@ -151,8 +167,12 @@ func readClipsFromArtifact(path string) ([]timelineClip, error) {
 			if text == "" {
 				text, _ = m["source_text"].(string)
 			}
+			if text == "" {
+				text, _ = m["description"].(string)
+			}
 			id, _ := m["id"].(string)
-			out = append(out, timelineClip{ID: id, Start: start, End: end, Text: text})
+			sourcePath, _ := m["source_path"].(string)
+			out = append(out, timelineClip{ID: id, Start: start, End: end, Text: text, SourcePath: sourcePath})
 		}
 		return out, nil
 	}
@@ -247,6 +267,8 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 	var clips []timelineClip
 	var clipArtifact string
 	var warnings []string
+	var syntheticFallback bool
+	var fallbackReason string
 
 	if opts.RunID != "" {
 		runDir, err := runstore.RequireRunDir(opts.RunID)
@@ -285,9 +307,44 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 				break
 			}
 		}
+		// Fallback 1: timeline_source.json written by a prior run or external tool.
+		if len(clips) == 0 {
+			tsPath := filepath.Join(runDir, timelineSourceArtifact)
+			if cs, err2 := readClipsFromArtifact(tsPath); err2 == nil && len(cs) > 0 {
+				clips = cs
+				clipArtifact = tsPath
+			}
+		}
+
+		// Fallback 2: build synthetic timeline source from source duration + goal.
+		if len(clips) == 0 && inputPath != "" {
+			dur, probeErr := probeMediaDuration(inputPath)
+			if probeErr == nil && dur > 0 {
+				tls := BuildSyntheticTimelineSource(inputPath, dur, goal)
+				tsPath := filepath.Join(runDir, timelineSourceArtifact)
+				_ = writeJSONFile(tsPath, tls)
+				clipArtifact = tsPath
+				syntheticFallback = true
+				fallbackReason = tls.Reason
+				for _, c := range tls.Clips {
+					clips = append(clips, timelineClip{
+						ID:         c.ID,
+						Start:      c.SourceStart,
+						End:        c.SourceEnd,
+						Text:       c.Description,
+						SourcePath: c.SourcePath,
+					})
+				}
+				warnings = append(warnings, SyntheticTimelineFallbackMessage(tls))
+				warnings = append(warnings, tls.Warnings...)
+			} else if probeErr != nil {
+				warnings = append(warnings, fmt.Sprintf("could not build synthetic timeline source: %v", probeErr))
+			}
+		}
+
 		if len(clips) == 0 {
 			warnings = append(warnings, fmt.Sprintf(
-				"run %q: no usable clip artifact found (checked selected_clips.json, goal_roughcut.json, enhanced_roughcut.json, roughcut.json); "+
+				"run %q: no usable clip artifact found (checked selected_clips.json, goal_roughcut.json, enhanced_roughcut.json, roughcut.json, timeline_source.json); "+
 					"run `byom-video pipeline --preset shorts` or `byom-video selected-clips %s` first",
 				opts.RunID, opts.RunID))
 		}
@@ -314,6 +371,8 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 			TimelineEnd:   cursor + dur,
 			SourceStart:   clip.Start,
 			SourceEnd:     clip.End,
+			SourcePath:    clip.SourcePath,
+			DurationSecs:  dur,
 			Text:          clip.Text,
 		})
 		if clip.Text != "" {
@@ -395,9 +454,11 @@ func CreativeTimeline(planID string, stdout io.Writer, opts CreativeTimelineOpti
 		InputPath:      inputPath,
 		Mode:           "stub",
 		Source: CreativeTimelineSource{
-			ClipArtifact: clipArtifact,
-			ClipCount:    len(clips),
-			StubOutputs:  true,
+			ClipArtifact:      clipArtifact,
+			ClipCount:         len(clips),
+			StubOutputs:       true,
+			SyntheticFallback: syntheticFallback,
+			FallbackReason:    fallbackReason,
 		},
 		Tracks:        tracks,
 		TotalDuration: totalDuration,

@@ -23,8 +23,12 @@ def transcribe(input_path: str, run_dir: str, model_size: str = "tiny") -> Path:
         ) from exc
 
     model = WhisperModel(model_size)
-    segments_iter, info = model.transcribe(str(source))
-    segments = list(segments_iter)
+    try:
+        segments_iter, info = model.transcribe(str(source))
+        segments = list(segments_iter)
+    except Exception:
+        segments = []
+        info = None
 
     transcript = {
         "schema_version": "transcript.v1",
@@ -34,8 +38,8 @@ def transcribe(input_path: str, run_dir: str, model_size: str = "tiny") -> Path:
             "engine": "faster-whisper",
             "model_size": model_size,
         },
-        "language": _get_attr(info, "language", "unknown") or "unknown",
-        "duration_seconds": _get_attr(info, "duration", None),
+        "language": _get_attr(info, "language", "unknown") if info is not None else "unknown",
+        "duration_seconds": _get_attr(info, "duration", None) if info is not None else None,
         "segments": [
             {
                 "id": f"seg_{index + 1:04d}",

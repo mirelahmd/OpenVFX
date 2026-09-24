@@ -1,0 +1,24 @@
+# Route the Creative Director to a local Ollama model.
+#
+# The Go runtime resolves this route and hands the Python sidecar a JSON config,
+# so the sidecar never parses YAML and never chooses a provider itself.
+#
+#   byom-video produce ./assets --goal "<rich creative request>" --director llm
+
+python:
+  interpreter: .venv/bin/python
+
+models:
+  enabled: true
+
+  entries:
+    creative_llm:
+      provider: ollama
+      model: qwen2.5:7b
+      role: director
+      base_url: http://localhost:11434
+      options:
+        temperature: 0.4
+
+  routes:
+    creative_director: creative_llm

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mirelahmd/OpenVFX/internal/config"
 	"github.com/mirelahmd/OpenVFX/internal/exporter"
 	"github.com/mirelahmd/OpenVFX/internal/runinfo"
 )
@@ -259,14 +260,15 @@ func Make(inputPath string, stdout io.Writer, opts MakeOptions) error {
 
 		runsBefore, _ := listRunIDs()
 
+		cfg, _ := config.Load(config.DefaultPath)
 		pipelineOpts := RunOptions{
-			WithTranscript:    true,
-			WithCaptions:      true,
-			WithChunks:        true,
-			WithHighlights:    true,
-			WithRoughcut:      true,
-			WithFFmpegScript:  true,
-			WithReport:        true,
+			WithTranscript:    cfg.Transcription.Enabled,
+			WithCaptions:      cfg.Captions.Enabled,
+			WithChunks:        cfg.Chunks.Enabled,
+			WithHighlights:    cfg.Highlights.Enabled,
+			WithRoughcut:      cfg.Roughcut.Enabled,
+			WithFFmpegScript:  cfg.FFmpegScript.Enabled,
+			WithReport:        cfg.Report.Enabled,
 			PythonInterpreter: opts.PythonInterpreter,
 		}
 		if err := Run(absInput, io.Discard, pipelineOpts); err != nil {
@@ -524,10 +526,23 @@ func Make(inputPath string, stdout io.Writer, opts MakeOptions) error {
 		return fmt.Errorf("creative-timeline failed: %w", err)
 	}
 
-	// Verify clips were found
+	// Surface any timeline warnings (including synthetic fallback notice) to the user.
+	if tlData, tlErr := readTimelineArtifact(planID); tlErr == nil {
+		for _, w := range tlData.Warnings {
+			fmt.Fprintf(stdout, "  warning:     %s\n", w)
+			summary.Warnings = append(summary.Warnings, w)
+		}
+		if tlData.Source.SyntheticFallback {
+			fmt.Fprintf(stdout, "  fallback:    synthetic timeline (no roughcut found)\n")
+		}
+	}
+
+	// Verify clips were found (synthetic fallback should have produced clips).
 	clipCount, err := countTimelineClips(planID)
 	if err != nil || clipCount == 0 {
-		return fmt.Errorf("creative-timeline produced 0 clips; check run artifacts with: byom-video inspect %s", runID)
+		return fmt.Errorf(
+			"creative-timeline produced 0 clips; ffprobe may be unavailable or the source video could not be probed — check run artifacts with: byom-video inspect %s",
+			runID)
 	}
 
 	if err := CreativeRenderPlan(planID, io.Discard, CreativeRenderPlanOptions{Overwrite: opts.Overwrite}); err != nil {
@@ -929,12 +944,13 @@ func validateSkipPipelineRun(runID, inputPath string, strictInput bool) (string,
 		return "", "", "", fmt.Errorf("run %q not found at %s; run pipeline first", runID, runDir)
 	}
 
-	// Check for usable clip source
+	// Check for usable clip source (includes timeline_source.json for generated/silent videos).
 	clipSources := []string{
 		"selected_clips.json",
 		"goal_roughcut.json",
 		"enhanced_roughcut.json",
 		"roughcut.json",
+		"timeline_source.json",
 	}
 	found := false
 	for _, name := range clipSources {
@@ -1300,6 +1316,19 @@ func newestPlanID(before map[string]bool) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no creative plans found after planning")
+}
+
+func readTimelineArtifact(planID string) (*CreativeTimelineArtifact, error) {
+	tlPath := filepath.Join(creativePlansRoot, planID, "outputs", "creative_timeline.json")
+	data, err := os.ReadFile(tlPath)
+	if err != nil {
+		return nil, err
+	}
+	var tl CreativeTimelineArtifact
+	if err := json.Unmarshal(data, &tl); err != nil {
+		return nil, err
+	}
+	return &tl, nil
 }
 
 func countTimelineClips(planID string) (int, error) {

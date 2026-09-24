@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mirelahmd/OpenVFX/internal/production"
 )
 
 // AgentGraphRunOptions controls the agent-graph-run command.
@@ -78,9 +80,9 @@ func agentGraphRunCommandWithRunner(
 	if opts.DryRun {
 		if opts.JSON {
 			payload := map[string]any{
-				"plan_id": planID,
-				"run_id":  runID,
-				"dry_run": true,
+				"plan_id":  planID,
+				"run_id":   runID,
+				"dry_run":  true,
 				"plan_dir": planDir,
 			}
 			data, err := json.MarshalIndent(payload, "", "  ")
@@ -162,28 +164,8 @@ func agentGraphRunCommandWithRunner(
 	return nil
 }
 
-// resolveWorkersDir attempts to find the workers/ directory relative to common locations.
+// resolveWorkersDir delegates to the shared installed-first resolver so the
+// agent sidecar is found identically from a release install and a checkout.
 func resolveWorkersDir() string {
-	// Check env override first.
-	if v := os.Getenv("BYOM_VIDEO_WORKERS_DIR"); v != "" {
-		return v
-	}
-	// Try relative to the executable.
-	if exe, err := os.Executable(); err == nil {
-		// Typical layout: <repo>/cmd/byom-video → <repo>/workers
-		candidate := filepath.Join(filepath.Dir(filepath.Dir(exe)), "workers")
-		if _, err := os.Stat(filepath.Join(candidate, "openvfx_agent_graph")); err == nil {
-			return candidate
-		}
-	}
-	// Try CWD ancestors.
-	cwd, _ := os.Getwd()
-	for dir := cwd; dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
-		candidate := filepath.Join(dir, "workers")
-		if _, err := os.Stat(filepath.Join(candidate, "openvfx_agent_graph")); err == nil {
-			return candidate
-		}
-	}
-	// Return empty — the module might already be installed.
-	return ""
+	return production.ResolveWorkersDir()
 }

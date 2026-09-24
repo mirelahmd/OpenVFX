@@ -1,40 +1,90 @@
-# BYOM Video
+# OpenVFX
 
-Local-first video workflow CLI. Transcribe, cut, caption, and plan exports from your own machine — no cloud required.
+Local-first agentic control plane for media, VFX and AI-native pre/post-production.
+Observe your assets, reason about what should be made, execute typed media stages,
+validate the result, and keep a complete replayable record of what happened.
 
 > Alpha. Schemas and commands are still evolving.
-
-## Requirements
-
-- Go 1.22+
-- `ffmpeg` and `ffprobe` on `PATH`
-- Python 3.10+ with `faster-whisper` for real transcription (optional for metadata-only runs)
-- Ollama for local model expansion (optional)
 
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mirelahmd/byom-video/main/install.sh | sh
-source ~/.zshrc
-byom-video version
-byom-video doctor
+curl -fsSL https://raw.githubusercontent.com/mirelahmd/OpenVFX/main/install.sh | sh
 ```
 
-The install script handles the Go binary, Python environment, and worker package automatically.
-
-**Or build from source:**
+Then:
 
 ```sh
-git clone https://github.com/mirelahmd/byom-video.git
-cd byom-video
+openvfx --version
+openvfx --help
+```
+
+No Go toolchain, no repository clone, no manual Python setup. The installer
+downloads a signed-by-checksum release archive containing the CLI *and* the
+Python agent sidecar, verifies its SHA-256, and provisions an isolated
+environment for the Creative Director.
+
+To pin a version, put the variable **after** the pipe — a variable placed before
+`curl` is scoped to `curl`, not to `sh`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mirelahmd/OpenVFX/main/install.sh | OPENVFX_VERSION=v0.1.0 sh
+```
+
+### Supported platforms
+
+| OS | Architectures |
+|---|---|
+| macOS | arm64 (Apple silicon), amd64 (Intel) |
+| Linux | amd64, arm64 |
+
+### Requirements
+
+- **ffmpeg and ffprobe** on `PATH` — required for all media execution. The
+  installer detects them and reports status; it never installs system packages
+  for you. (`brew install ffmpeg` / `sudo apt-get install ffmpeg`)
+- **Python 3.10+** — used to provision the agent sidecar environment. Without it
+  the CLI still works, but the Creative Director is unavailable.
+- **A model is optional.** OpenVFX is bring-your-own-model: nothing is bundled
+  and no provider is contacted unless you configure one. With no model
+  configured the Creative Director runs in **deterministic mode** — it still
+  produces a real treatment from observable evidence, labels itself
+  `deterministic`, and never claims semantic reasoning.
+
+### Installed layout
+
+```
+~/.local/bin/openvfx                        the CLI
+~/.local/bin/byom-video -> openvfx          compatibility symlink
+~/.local/share/openvfx/<version>/workers/   the Python agent sidecar
+~/.local/share/openvfx/current -> <version> what the CLI resolves
+~/.local/share/openvfx/venv/                isolated agent environment
+```
+
+`/usr/local/bin` is used instead of `~/.local/bin` when it is writable, so a
+normal install never needs `sudo`.
+
+Enable transcription (large download; needed for captions):
+
+```sh
+~/.local/share/openvfx/venv/bin/pip install "$HOME/.local/share/openvfx/current/workers[transcribe]"
+```
+
+### Uninstall
+
+```sh
+rm -f  ~/.local/bin/openvfx ~/.local/bin/byom-video
+rm -rf ~/.local/share/openvfx
+rm -rf .byom-video          # per-project artifacts, if you want them gone
+```
+
+### Build from source (contributors)
+
+```sh
+git clone https://github.com/mirelahmd/OpenVFX.git
+cd OpenVFX
 go build -o byom-video ./cmd/byom-video
-./byom-video version
-```
-
-**Or via `go install`** (requires GitHub repo named `byom-video`):
-
-```sh
-go install github.com/mirelahmd/byom-video/cmd/byom-video@latest
+scripts/build-release.sh        # cross-build release archives into dist/
 ```
 
 ## Quickstart
@@ -84,10 +134,71 @@ byom-video make-result <make_id>
 byom-video inspect-make <make_id>
 ```
 
+## Production Control Loop (`produce`)
+
+`produce` runs one complete pass of the OpenVFX architecture — observe, direct,
+plan, execute, validate, revise, complete — with the plan as the actual program.
+
+```sh
+scripts/make-produce-fixtures.sh ./assets
+byom-video produce ./assets --goal "Make a 12-second cinematic Instagram reel from these clips. \
+Open aggressively. Build tension early then slow down for the final line. Keep captions bold and low. \
+I want it to feel premium and dramatic rather than like a generic social edit."
+```
+
+A **Creative Director** agent (LangGraph) interprets the request into a
+structured `creative_treatment.json` — narrative beats, pacing phases, per-asset
+roles, intended cuts, coverage gaps and success criteria — before any
+deterministic planning happens. Its segments become the actual ffmpeg cuts, and
+each stage carries a `treatment_decision_id` back to the creative reason:
+
+```
+stage_0003  select_clips  ↳ treatment: Start 1s into clip_1 rather than at frame zero. (dec_0001)
+ffmpeg -hide_banner -y -ss 1.000 -i .../clip_1.mp4 -t 4.000 ...
+```
+
+Reasoning mode is always reported, never assumed: `semantic_reasoning` is true
+only when a model actually reasoned. With no model configured the graph still
+runs and produces a real treatment from observable evidence, labelled
+`deterministic` and carrying its own `uncertainties`.
+
+```sh
+byom-video produce ./assets --goal "..." --director llm --director-model llama3
+byom-video creative-treatment <production_id>
+```
+
+Every stage declares the capability it needs and its compute footprint. Backends
+are bound late, against capabilities **probed on this machine** rather than read
+from config. When a required capability is missing, the stage is blocked and a
+revision records the substitution:
+
+```
+execute    stage_0006 BLOCKED: required capability ffmpeg.filter.subtitles unavailable
+revise     rev_0001: capability_unavailable
+           stage_0006: requires ffmpeg.filter.subtitles -> sidecar.srt
+           plan v2 written; 5 of 6 stages reused from v1
+validate   captions_delivered  PASS  delivered as sidecar SRT, not burned in  (degraded)
+complete   completed_degraded
+```
+
+Both plans survive on disk and are diffable, every stage records the exact
+`argv` it ran, and `byom-video replay <production_id>` reproduces the work from
+those records alone.
+
+```sh
+byom-video productions
+byom-video replay <production_id>
+cat .byom-video/productions/<id>/handoff.md
+```
+
+See [docs/production.md](docs/production.md) for the artifact layout, the
+assertion list, and an honest account of the current limitations.
+
 ## What It Does
 
 | Area | Commands |
 |---|---|
+| Production control loop | `produce`, `productions`, `replay`, `creative-treatment` |
 | Creator flow | `make`, `makes`, `inspect-make`, `make-result` |
 | Agentic create | `create`, `create-result`, `create-sessions`, `inspect-create-session` |
 | Visual dry-runs | `visual-requests` |
